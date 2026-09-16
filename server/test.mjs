@@ -83,6 +83,49 @@ test('store persists and reloads', async () => {
     assert.equal(hashLine('次は'), hashLine(' 次は '));
 });
 
+test('store organizes analyses by anime/episode and reloads them', async () => {
+    const dir = await tmpDir();
+    const s = await new AnalysisStore(dir).init();
+    await s.put('次は', SAMPLE, 'deepseek-chat', 'Frieren', '28');
+    await s.close();
+
+    // Episode file lives at DATA_DIR/<anime>/<episode>.json.
+    const epFile = path.join(dir, 'Frieren', '28.json');
+    const raw = JSON.parse(await fs.readFile(epFile, 'utf8'));
+    assert.equal(raw.anime, 'Frieren');
+    assert.equal(raw.episode, '28');
+
+    const s2 = await new AnalysisStore(dir).init();
+    // episodeHas is scoped to the show/episode.
+    assert.ok(s2.episodeHas('Frieren', '28', '次は'));
+    assert.ok(!s2.episodeHas('Frieren', '01', '次は'));
+    // Normalized-equivalent line still hits within the episode.
+    assert.ok(s2.episodeHas('Frieren', '28', '{\\an8}次は'));
+
+    // getEpisode returns { normalizedLine: analysis } for bulk client load.
+    const ep = s2.getEpisode('Frieren', '28');
+    assert.equal(ep.count, 1);
+    assert.equal(ep.analyses['次は'].translation, SAMPLE.translation);
+
+    // Global dedup index still works across episodes.
+    assert.ok(s2.get('次は'));
+    await s2.close();
+});
+
+test('store library lists shows and episode line counts', async () => {
+    const dir = await tmpDir();
+    const s = await new AnalysisStore(dir).init();
+    await s.put('次は', SAMPLE, 'm', 'Frieren', '28');
+    await s.put('おはよう', { ...SAMPLE, translation: '早上好。' }, 'm', 'Frieren', '01');
+    const lib = s.library();
+    const frieren = lib.find((x) => x.anime === 'Frieren');
+    assert.ok(frieren);
+    assert.equal(frieren.episodes.length, 2);
+    // Sorted numerically: 01 before 28.
+    assert.equal(frieren.episodes[0].episode, '01');
+    await s.close();
+});
+
 test('store stats aggregate grammar and words', async () => {
     const dir = await tmpDir();
     const s = await new AnalysisStore(dir).init();

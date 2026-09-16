@@ -79,6 +79,9 @@ import { useFullscreen } from '@project/common/app/hooks/use-fullscreen';
 import MobileVideoOverlay from '@project/common/components/MobileVideoOverlay';
 import BlurOverlay from '@project/common/app/components/BlurOverlay';
 import { CachedLocalStorage } from '@project/common/app/services/cached-local-storage';
+import { recoverVideoAudio, cancelAudioRecovery, AudioRecoveryError } from '@project/common/app/services/video-audio-recovery';
+import { SidecarAudio } from '@project/common/app/services/sidecar-audio';
+import CircularProgress from '@mui/material/CircularProgress';
 import useLastScrollableControlType from '@project/common/hooks/use-last-scrollable-control-type';
 import type { Theme } from '@mui/material/styles';
 
@@ -108,6 +111,26 @@ const useStyles = makeStyles<Theme>((theme) => ({
         position: 'absolute',
         zIndex: 10,
         bottom: theme.spacing(1.5),
+    },
+    // Small, unobtrusive panel that appears only when the video's audio looks undecodable.
+    audioFix: {
+        position: 'absolute',
+        top: theme.spacing(1),
+        left: theme.spacing(1),
+        zIndex: 5,
+        maxWidth: 'min(90%, 30rem)',
+        display: 'flex',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: theme.spacing(1),
+        padding: theme.spacing(0.75, 1.25),
+        borderRadius: theme.shape.borderRadius,
+        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        color: '#fff',
+        fontSize: '0.8rem',
+    },
+    audioFixError: {
+        color: theme.palette.error.light,
     },
 }));
 
@@ -432,6 +455,119 @@ export default function VideoPlayer({
     const [, forceRender] = useState<any>();
     const [mineIntervalStartTimestamp, setMineIntervalStartTimestamp] = useState<number>();
     const [blurOverlayVisible, setBlurOverlayVisible] = useState<boolean>(false);
+
+    // --- Unsupported-audio recovery (see common/app/services/video-audio-recovery.ts) ---
+    // MKV/Ts releases usually carry AC-3/DTS audio, which Chromium cannot decode: the
+    // picture plays perfectly but there is no sound. We detect that, then optionally
+    // transcode just the audio to AAC in-browser and play it through a synced sidecar.
+    const [audioFixStatus, setAudioFixStatus] = useState<'idle' | 'working' | 'ready' | 'error'>('idle');
+    const [audioFixRatio, setAudioFixRatio] = useState<number | undefined>(undefined);
+    const [audioFixError, setAudioFixError] = useState<string | undefined>(undefined);
+    const [audioMissing, setAudioMissing] = useState<boolean>(false);
+    const [audioFixDismissed, setAudioFixDismissed] = useState<boolean>(false);
+    const sidecarAudioRef = useRef<SidecarAudio | undefined>(undefined);
+    const audioRecoveryAbortRef = useRef<AbortController | undefined>(undefined);
+
+    // Containers/containers-in-disguise whose audio is usually an unsupported codec.
+    const likelyUnsupportedAudio = /\.(mkv|mka|m2ts|ts)$/i.test(videoFileName ?? '');
+
+    const audioFixPanelVisible =
+        !audioFixDismissed && (audioFixStatus !== 'idle' || audioMissing || likelyUnsupportedAudio);
+
+    const handleRecoverAudio = useCallback(async () => {
+        if (!video || audioFixStatus === 'working') return;
+        const controller = new AbortController();
+        audioRecoveryAbortRef.current = controller;
+        setAudioFixStatus('working');
+        setAudioFixRatio(0);
+        setAudioFixError(undefined);
+        try {
+            const result = await recoverVideoAudio(video, {
+                fileName: videoFileNameRef.current,
+                signal: controller.signal,
+                onProgress: ({ ratio }) => {
+                    setAudioFixRatio(ratio);
+                },
+            });
+            if (controller.signal.aborted) return;
+            sidecarAudioRef.current?.destroy();
+            sidecarAudioRef.current = new SidecarAudio(video, result.blob);
+            setAudioMissing(false);
+            setAudioFixRatio(undefined);
+            setAudioFixStatus('ready');
+        } catch (e) {
+            if (controller.signal.aborted) return; // superseded by a file change or unmount
+            setAudioFixError(e instanceof AudioRecoveryError ? e.message : e instanceof Error ? e.message : String(e));
+            setAudioFixRatio(undefined);
+            setAudioFixStatus('error');
+        } finally {
+            if (audioRecoveryAbortRef.current === controller) audioRecoveryAbortRef.current = undefined;
+        }
+    }, [video, audioFixStatus]);
+
+    const handleStopRecoveredAudio = useCallback(() => {
+        sidecarAudioRef.current?.destroy();
+        sidecarAudioRef.current = undefined;
+        setAudioFixStatus('idle');
+    }, []);
+
+    // Reset everything when a different file is loaded, and tear down on unmount.
+    useEffect(() => {
+        // A transcode from the previous file is useless now; stop it before it can attach
+        // its audio to the new video element.
+        audioRecoveryAbortRef.current?.abort();
+        audioRecoveryAbortRef.current = undefined;
+        sidecarAudioRef.current?.destroy();
+        sidecarAudioRef.current = undefined;
+        void cancelAudioRecovery();
+        setAudioFixStatus('idle');
+        setAudioFixError(undefined);
+        setAudioFixRatio(undefined);
+        setAudioMissing(false);
+        setAudioFixDismissed(false);
+    }, [videoFile]);
+
+    useEffect(
+        () => () => {
+            sidecarAudioRef.current?.destroy();
+            sidecarAudioRef.current = undefined;
+            audioRecoveryAbortRef.current?.abort();
+            void cancelAudioRecovery();
+        },
+        []
+    );
+
+    // Best-effort detection: once playback is under way, Chromium reports how many audio
+    // bytes it has decoded. Zero means the audio track was never decodable.
+    useEffect(() => {
+        if (!video) return;
+        let timer: number | undefined;
+        const check = () => {
+            const v = video as ExperimentalHTMLVideoElement & {
+                webkitAudioDecodedByteCount?: number;
+                mozHasAudio?: boolean;
+            };
+            let missing: boolean | undefined;
+            if (typeof v.webkitAudioDecodedByteCount === 'number') {
+                missing = v.webkitAudioDecodedByteCount === 0;
+            } else if (typeof v.mozHasAudio === 'boolean') {
+                missing = v.mozHasAudio === false;
+            } else if (v.audioTracks && typeof v.audioTracks.length === 'number') {
+                missing = v.audioTracks.length === 0;
+            }
+            if (missing) setAudioMissing(true);
+        };
+        const onPlaying = () => {
+            if (timer !== undefined) return;
+            // Give the decoder a moment to actually produce some audio bytes.
+            timer = window.setTimeout(check, 2500);
+        };
+        video.addEventListener('playing', onPlaying);
+        return () => {
+            video.removeEventListener('playing', onPlaying);
+            if (timer !== undefined) window.clearTimeout(timer);
+        };
+    }, [video]);
     const handleBlurOverlayToggle = useCallback(() => setBlurOverlayVisible((v) => !v), []);
     const mobileOverlayRef = useRef<HTMLDivElement>(null);
     const bottomSubtitleContainerRef = useRef<HTMLDivElement>(null);
@@ -2123,6 +2259,52 @@ export default function VideoPlayer({
                 src={videoFile}
                 onMouseOver={handleVideoMouseOver}
             />
+            {audioFixPanelVisible && (
+                <div className={classes.audioFix}>
+                    {audioFixStatus === 'working' && (
+                        <>
+                            <CircularProgress size={14} color="inherit" />
+                            <span>
+                                {t('audioRecovery.working')}
+                                {audioFixRatio !== undefined ? ` ${Math.round(audioFixRatio * 100)}%` : '…'}
+                            </span>
+                        </>
+                    )}
+                    {audioFixStatus === 'ready' && (
+                        <>
+                            <span>{t('audioRecovery.done')}</span>
+                            <Button size="small" color="inherit" onClick={handleStopRecoveredAudio}>
+                                {t('audioRecovery.off')}
+                            </Button>
+                        </>
+                    )}
+                    {audioFixStatus === 'error' && (
+                        <>
+                            <span className={classes.audioFixError}>
+                                {t('audioRecovery.failed')}
+                                {audioFixError ? `: ${audioFixError}` : ''}
+                            </span>
+                            <Button size="small" variant="contained" onClick={handleRecoverAudio}>
+                                {t('audioRecovery.retry')}
+                            </Button>
+                            <Button size="small" color="inherit" onClick={() => setAudioFixDismissed(true)}>
+                                {t('audioRecovery.dismiss')}
+                            </Button>
+                        </>
+                    )}
+                    {audioFixStatus === 'idle' && (
+                        <>
+                            <span>{t('audioRecovery.needed')}</span>
+                            <Button size="small" variant="contained" onClick={handleRecoverAudio}>
+                                {t('audioRecovery.start')}
+                            </Button>
+                            <Button size="small" color="inherit" onClick={() => setAudioFixDismissed(true)}>
+                                {t('audioRecovery.dismiss')}
+                            </Button>
+                        </>
+                    )}
+                </div>
+            )}
             {/* Optional blur mask overlay; constrained to the video bounds within the player container */}
             {blurOverlayVisible && <BlurOverlay anchorRef={containerRef} containerRef={videoRef} />}
             {/* this video is for getting the seek preview below */}

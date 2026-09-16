@@ -57,6 +57,8 @@ const CONFIG = {
     dataDir: process.env.DATA_DIR || path.join(__dirname, 'data'),
     publicDir: process.env.PUBLIC_DIR || '',
     allowClientKey: String(process.env.ALLOW_CLIENT_KEY || 'false') === 'true',
+    voicevoxUrl: (process.env.VOICEVOX_URL || 'http://127.0.0.1:50021').replace(/\/$/, ''),
+    voicevoxSpeaker: process.env.VOICEVOX_SPEAKER || '1',
 };
 
 const store = await new AnalysisStore(CONFIG.dataDir).init();
@@ -96,10 +98,14 @@ function readBody(req, limit = 1_000_000) {
     });
 }
 
-async function getOrCreateAnalysis(line, { force, apiKey, baseUrl, model }) {
+async function getOrCreateAnalysis(line, { force, apiKey, baseUrl, model, anime, episode }) {
     if (!force) {
         const hit = store.get(line);
         if (hit) {
+            // Make sure this episode's file also records the line (once).
+            if ((anime || episode) && !store.episodeHas(anime, episode, line)) {
+                await store.put(line, hit.analysis, hit.model ?? CONFIG.model, anime, episode);
+            }
             return { analysis: hit.analysis, cached: true, model: hit.model };
         }
     }
@@ -107,6 +113,7 @@ async function getOrCreateAnalysis(line, { force, apiKey, baseUrl, model }) {
     const key = hashLine(line);
     if (inFlight.has(key)) {
         const analysis = await inFlight.get(key);
+        await store.put(line, analysis, usedModel, anime, episode);
         return { analysis, cached: true, model: usedModel };
     }
     const config = {
@@ -118,11 +125,33 @@ async function getOrCreateAnalysis(line, { force, apiKey, baseUrl, model }) {
     inFlight.set(key, promise);
     try {
         const analysis = await promise;
-        await store.put(line, analysis, usedModel);
+        await store.put(line, analysis, usedModel, anime, episode);
         return { analysis, cached: false, model: usedModel };
     } finally {
         inFlight.delete(key);
     }
+}
+
+// Proxy VOICEVOX (local neural TTS) so the browser never hits CORS and the
+// engine URL stays a server-side concern. Returns a WAV buffer.
+async function synthesizeVoicevox(text, speaker) {
+    const spk = encodeURIComponent(speaker || CONFIG.voicevoxSpeaker);
+    const queryRes = await fetch(`${CONFIG.voicevoxUrl}/audio_query?text=${encodeURIComponent(text)}&speaker=${spk}`, {
+        method: 'POST',
+    });
+    if (!queryRes.ok) {
+        throw new Error(`voicevox audio_query ${queryRes.status}`);
+    }
+    const query = await queryRes.json();
+    const synthRes = await fetch(`${CONFIG.voicevoxUrl}/synthesis?speaker=${spk}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'audio/wav' },
+        body: JSON.stringify(query),
+    });
+    if (!synthRes.ok) {
+        throw new Error(`voicevox synthesis ${synthRes.status}`);
+    }
+    return Buffer.from(await synthRes.arrayBuffer());
 }
 
 function toCsv(rows) {
@@ -209,6 +238,7 @@ const server = http.createServer(async (req, res) => {
                 baseUrl: CONFIG.baseUrl,
                 hasKey: Boolean(CONFIG.apiKey),
                 allowClientKey: CONFIG.allowClientKey,
+                tts: true,
             });
             return;
         }
@@ -230,11 +260,47 @@ const server = http.createServer(async (req, res) => {
                     apiKey: body.apiKey,
                     baseUrl: body.baseUrl,
                     model: body.model,
+                    anime: body.anime,
+                    episode: body.episode,
                 });
                 sendJson(res, 200, result);
             } catch (e) {
                 const message = e instanceof LlmAnalysisError ? e.message : String(e?.message || e);
                 sendJson(res, 502, { error: message });
+            }
+            return;
+        }
+
+        if (route === 'GET /api/episode') {
+            const anime = url.searchParams.get('anime') || '';
+            const episode = url.searchParams.get('episode') || '';
+            sendJson(res, 200, store.getEpisode(anime, episode));
+            return;
+        }
+
+        if (route === 'GET /api/library') {
+            sendJson(res, 200, { shows: store.library() });
+            return;
+        }
+
+        if (route === 'GET /api/tts') {
+            const text = url.searchParams.get('text') || '';
+            const speaker = url.searchParams.get('speaker') || '';
+            if (!text.trim()) {
+                sendJson(res, 400, { error: '缺少 text' });
+                return;
+            }
+            try {
+                const wav = await synthesizeVoicevox(text, speaker);
+                res.writeHead(200, {
+                    'Content-Type': 'audio/wav',
+                    'Content-Length': wav.length,
+                    'Cache-Control': 'public, max-age=86400',
+                    ...CORS,
+                });
+                res.end(wav);
+            } catch (e) {
+                sendJson(res, 502, { error: `VOICEVOX 不可用: ${String(e?.message || e)}` });
             }
             return;
         }

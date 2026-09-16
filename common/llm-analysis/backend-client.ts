@@ -29,11 +29,17 @@ function apiUrl(backendUrl: string, path: string): string {
     return `${backendUrl.replace(/\/+$/, '')}${path}`;
 }
 
+/** Metadata identifying which show/episode a line belongs to (for file organization). */
+export interface EpisodeRef {
+    anime?: string;
+    episode?: string;
+}
+
 /** Analyze one line via the backend. */
 export async function analyzeViaBackend(
     backendUrl: string,
     line: string,
-    options?: { force?: boolean; signal?: AbortSignal }
+    options?: { force?: boolean; signal?: AbortSignal; anime?: string; episode?: string }
 ): Promise<BackendAnalyzeResult> {
     const text = line.trim();
     if (!text) {
@@ -44,7 +50,12 @@ export async function analyzeViaBackend(
         response = await fetch(apiUrl(backendUrl, '/api/analyze'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ line: text, force: options?.force ?? false }),
+            body: JSON.stringify({
+                line: text,
+                force: options?.force ?? false,
+                anime: options?.anime,
+                episode: options?.episode,
+            }),
             signal: options?.signal,
         });
     } catch (e) {
@@ -65,6 +76,41 @@ export async function analyzeViaBackend(
     return (await response.json()) as BackendAnalyzeResult;
 }
 
+export interface EpisodeAnalyses {
+    anime: string;
+    episode: string;
+    count: number;
+    /** normalizedLine -> analysis */
+    analyses: Record<string, SubtitleAnalysis>;
+}
+
+/** Bulk-load every cached analysis for one episode (called when a file is opened). */
+export async function fetchEpisodeAnalyses(
+    backendUrl: string,
+    ref: EpisodeRef,
+    signal?: AbortSignal
+): Promise<EpisodeAnalyses | null> {
+    const params = new URLSearchParams({ anime: ref.anime ?? '', episode: ref.episode ?? '' });
+    try {
+        const response = await fetch(apiUrl(backendUrl, `/api/episode?${params.toString()}`), { signal });
+        if (!response.ok) {
+            return null;
+        }
+        return (await response.json()) as EpisodeAnalyses;
+    } catch {
+        return null;
+    }
+}
+
+/** URL of the backend's TTS (VOICEVOX) audio for a piece of text — usable as <audio> src. */
+export function backendTtsUrl(backendUrl: string, text: string, speaker?: string): string {
+    const params = new URLSearchParams({ text });
+    if (speaker) {
+        params.set('speaker', speaker);
+    }
+    return apiUrl(backendUrl, `/api/tts?${params.toString()}`);
+}
+
 /** Fetch aggregate statistics from the backend (for a stats view). */
 export async function fetchBackendStats(backendUrl: string, signal?: AbortSignal): Promise<BackendStats> {
     const response = await fetch(apiUrl(backendUrl, '/api/stats'), { signal });
@@ -78,13 +124,13 @@ export async function fetchBackendStats(backendUrl: string, signal?: AbortSignal
 export async function pingBackend(
     backendUrl: string,
     signal?: AbortSignal
-): Promise<{ ok: boolean; lines: number; model: string; hasKey: boolean } | null> {
+): Promise<{ ok: boolean; lines: number; model: string; hasKey: boolean; tts?: boolean } | null> {
     try {
         const response = await fetch(apiUrl(backendUrl, '/api/health'), { signal });
         if (!response.ok) {
             return null;
         }
-        return (await response.json()) as { ok: boolean; lines: number; model: string; hasKey: boolean };
+        return (await response.json()) as { ok: boolean; lines: number; model: string; hasKey: boolean; tts?: boolean };
     } catch {
         return null;
     }

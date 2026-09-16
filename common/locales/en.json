@@ -58,7 +58,19 @@
         "analyzingEpisode": "Analyzing {{done}}/{{total}}…",
         "episodeDone": "Done — {{analyzed}} new, {{cached}} cached",
         "episodeNoSubtitles": "Load a subtitle track first.",
-        "stop": "Stop"
+        "stop": "Stop",
+        "speak": "Pronounce",
+        "playAudio": "Play original audio"
+    },
+    "audioRecovery": {
+        "needed": "No sound? This file's audio codec may be unsupported. Repair it?",
+        "start": "Repair audio",
+        "working": "Converting audio…",
+        "done": "Audio repaired and playing.",
+        "off": "Turn off",
+        "failed": "Could not repair the audio",
+        "retry": "Retry",
+        "dismiss": "Dismiss"
     },
     "about": {
         "title": "About asbplayer",

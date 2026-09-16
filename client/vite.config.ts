@@ -13,6 +13,12 @@ export default defineConfig(({ mode }) => {
         resolve: {
             tsconfigPaths: true,
         },
+        // ffmpeg.wasm spawns its own module worker (`new URL('./worker.js', import.meta.url)`).
+        // Pre-bundling the package rewrites that URL away, so keep both packages un-optimized
+        // and let Vite's worker plugin emit the worker correctly in dev as well as in builds.
+        optimizeDeps: {
+            exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+        },
         plugins: [
             react(),
             createHtmlPlugin({

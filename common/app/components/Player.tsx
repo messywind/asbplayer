@@ -49,6 +49,7 @@ import type PlaybackPreferenceController from '@project/common/playback/controll
 import { useWindowSize } from '@project/common/app/hooks/use-window-size';
 import { useAppBarHeight } from '@project/common/hooks/use-app-bar-height';
 import { createBlobUrl } from '@project/common/blob-url';
+import { AudioClip } from '@project/common/audio-clip';
 import type { MiningContext } from '@project/common/app/services/mining-context';
 import type { SeekTimestampCommand, WebSocketClient } from '@project/common/web-socket-client';
 import {
@@ -1461,6 +1462,34 @@ function PlayerComponent(
 
     const [windowWidth, windowHeight] = useWindowSize(true);
 
+    // Play the original anime audio for a subtitle line (used by the analysis panel's
+    // line speaker button), so the pronunciation is the real voice actor, not TTS.
+    const lineAudioClipRef = useRef<AudioClip | undefined>(undefined);
+    const handlePlayLineAudio = useCallback(
+        (startMs: number, endMs: number) => {
+            if (!videoFile) {
+                return;
+            }
+            lineAudioClipRef.current?.stop();
+            const clip = AudioClip.fromFile(
+                {
+                    name: videoFile.file.name,
+                    blobUrl: createBlobUrl(videoFile.file),
+                    audioTrack: selectedAudioTrack,
+                    playbackRate,
+                },
+                startMs,
+                endMs,
+                playbackRate,
+                false,
+                selectedAudioTrack
+            );
+            lineAudioClipRef.current = clip;
+            void clip.play();
+        },
+        [videoFile, selectedAudioTrack, playbackRate]
+    );
+
     const videoInWindow = Boolean(videoFileUrl && !videoPopOut);
     const shouldLoadVideoAspectRatio =
         videoInWindow && settings.videoSubtitleSplitBehavior !== VideoSubtitleSplitBehavior.rememberSplitPosition;
@@ -1623,6 +1652,9 @@ function PlayerComponent(
                             settings={settings}
                             showingSubtitles={showingSubtitlesForAnalysis}
                             allSubtitles={subtitles}
+                            mediaFileName={videoFile?.file.name ?? subtitleFiles?.[0]?.file.name}
+                            lineAudioAvailable={Boolean(videoFile)}
+                            onPlayLineAudio={handlePlayLineAudio}
                         />
                     </Grid>
                 )}
