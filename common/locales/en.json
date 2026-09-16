@@ -38,6 +38,18 @@
         "reload": "Reload",
         "findPlaceholder": "Search by text or /regex/"
     },
+    "llmAnalysis": {
+        "title": "AI Analysis",
+        "waiting": "Play a subtitle to see its translation and grammar breakdown.",
+        "notConfigured": "Set your API key, base URL and model in Settings → Misc → AI Grammar Analysis.",
+        "analyze": "Analyze",
+        "reanalyze": "Re-analyze",
+        "analyzing": "Analyzing…",
+        "translation": "Translation",
+        "reading": "Reading",
+        "words": "Words",
+        "grammar": "Grammar"
+    },
     "about": {
         "title": "About asbplayer",
         "license": "License",
@@ -517,6 +529,13 @@
         "missingFieldError": "Field \"{{field}}\" not found in note type",
         "webSocketClientEnabled": "Enable WebSocket client",
         "webSocketServerUrl": "WebSocket Server URL",
+        "llmAnalysis": "AI Grammar Analysis (LLM)",
+        "llmAnalysisEnabled": "Enable AI analysis panel",
+        "llmAutoAnalyze": "Auto-analyze current subtitle",
+        "llmApiKey": "API Key",
+        "llmBaseUrl": "API Base URL",
+        "llmBaseUrlHelperText": "OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1",
+        "llmModel": "Model",
         "firefoxExtensionShortcutHelp": "Edit this shortcut from the Plugin manager at about:addons.",
         "postMinePlayback": "Post-mining playback state",
         "pauseOnHoverMode": "Auto-pause when mousing over subtitles",

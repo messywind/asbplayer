@@ -755,6 +755,21 @@ const settingsSchema = {
         subtitleAboveThumbnail: {
             type: 'boolean',
         },
+        llmAnalysisEnabled: {
+            type: 'boolean',
+        },
+        llmAutoAnalyze: {
+            type: 'boolean',
+        },
+        llmApiKey: {
+            type: 'string',
+        },
+        llmBaseUrl: {
+            type: 'string',
+        },
+        llmModel: {
+            type: 'string',
+        },
         _schema: {
             type: 'number',
         },

@@ -309,6 +309,11 @@ export const defaultSettings: AsbplayerSettings = {
     pauseOnHoverMode: 0,
     lastSelectedAnkiExportMode: 'default',
     dictionaryTracks: [defaultDictionaryTrackSettings, defaultDictionaryTrackSettings, defaultDictionaryTrackSettings],
+    llmAnalysisEnabled: false,
+    llmAutoAnalyze: true,
+    llmApiKey: '',
+    llmBaseUrl: 'https://api.deepseek.com/v1',
+    llmModel: 'deepseek-chat',
 };
 
 export const NUM_DICTIONARY_TRACKS = defaultSettings.dictionaryTracks.length;

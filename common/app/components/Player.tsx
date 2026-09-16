@@ -42,6 +42,7 @@ import Controls from '@project/common/app/components/Controls';
 import Grid from '@mui/material/Grid';
 import MediaAdapter from '@project/common/app/services/media-adapter';
 import SubtitlePlayer, { minSubtitlePlayerWidth } from '@project/common/app/components/SubtitlePlayer';
+import SubtitleAnalysisPanel from '@project/common/app/components/SubtitleAnalysisPanel';
 import VideoChannel from '@project/common/app/services/video-channel';
 import type ChromeExtension from '@project/common/app/services/chrome-extension';
 import type PlaybackPreferenceController from '@project/common/playback/controllers/playback-preference-controller';
@@ -1246,8 +1247,14 @@ function PlayerComponent(
         []
     );
 
+    const [showingSubtitlesForAnalysis, setShowingSubtitlesForAnalysis] = useState<SubtitleModel[]>([]);
+
     const handleSubtitlesHighlighted = useCallback(
         (subtitles: SubtitleModel[]) => {
+            if (settings.llmAnalysisEnabled) {
+                setShowingSubtitlesForAnalysis(subtitles);
+            }
+
             if (subtitles.length === 0 || !settings.autoCopyCurrentSubtitle || !document.hasFocus()) {
                 return;
             }
@@ -1263,7 +1270,7 @@ function PlayerComponent(
                 });
             }
         },
-        [settings.autoCopyCurrentSubtitle, settings.autoCopyableTracks]
+        [settings.llmAnalysisEnabled, settings.autoCopyCurrentSubtitle, settings.autoCopyableTracks]
     );
 
     useEffect(() => {
@@ -1610,6 +1617,11 @@ function PlayerComponent(
                         initialWidth={subtitlePlayerInitialWidth}
                     />
                 </Grid>
+                {settings.llmAnalysisEnabled && !actuallyHideSubtitlePlayer && (
+                    <Grid item>
+                        <SubtitleAnalysisPanel settings={settings} showingSubtitles={showingSubtitlesForAnalysis} />
+                    </Grid>
+                )}
             </Grid>
         </div>
     );

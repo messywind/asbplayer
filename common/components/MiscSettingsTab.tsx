@@ -108,6 +108,11 @@ const MiscSettingTab: React.FC<Props> = ({
         pauseOnHoverMode,
         webSocketClientEnabled,
         webSocketServerUrl,
+        llmAnalysisEnabled,
+        llmAutoAnalyze,
+        llmApiKey,
+        llmBaseUrl,
+        llmModel,
         subtitleAboveThumbnail,
         thumbnailPreview,
         autoPausePreference,
@@ -1030,6 +1035,54 @@ const MiscSettingTab: React.FC<Props> = ({
                             ),
                         },
                     }}
+                />
+                <SettingsSection>{t('settings.llmAnalysis')}</SettingsSection>
+                <SwitchLabelWithHoverEffect
+                    control={
+                        <Switch
+                            checked={llmAnalysisEnabled}
+                            onChange={(e) => onSettingChanged('llmAnalysisEnabled', e.target.checked)}
+                        />
+                    }
+                    label={t('settings.llmAnalysisEnabled')}
+                    labelPlacement="start"
+                />
+                <SwitchLabelWithHoverEffect
+                    control={
+                        <Switch
+                            checked={llmAutoAnalyze}
+                            disabled={!llmAnalysisEnabled}
+                            onChange={(e) => onSettingChanged('llmAutoAnalyze', e.target.checked)}
+                        />
+                    }
+                    label={t('settings.llmAutoAnalyze')}
+                    labelPlacement="start"
+                />
+                <SettingsTextField
+                    color="primary"
+                    fullWidth
+                    type="password"
+                    label={t('settings.llmApiKey')}
+                    value={llmApiKey}
+                    disabled={!llmAnalysisEnabled}
+                    onChange={(e) => onSettingChanged('llmApiKey', e.target.value)}
+                />
+                <SettingsTextField
+                    color="primary"
+                    fullWidth
+                    label={t('settings.llmBaseUrl')}
+                    value={llmBaseUrl}
+                    disabled={!llmAnalysisEnabled}
+                    helperText={t('settings.llmBaseUrlHelperText')}
+                    onChange={(e) => onSettingChanged('llmBaseUrl', e.target.value)}
+                />
+                <SettingsTextField
+                    color="primary"
+                    fullWidth
+                    label={t('settings.llmModel')}
+                    value={llmModel}
+                    disabled={!llmAnalysisEnabled}
+                    onChange={(e) => onSettingChanged('llmModel', e.target.value)}
                 />
                 <SettingsSection>{t('settings.mining')}</SettingsSection>
                 <NumericSettingInput

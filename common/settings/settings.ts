@@ -604,12 +604,31 @@ export interface StreamingVideoSettings {
 
 export type KeyBindName = keyof KeyBindSet;
 
+/**
+ * Settings for the LLM-powered subtitle analysis panel (Japanese -> Chinese
+ * translation + grammar/morphology breakdown). Targets any OpenAI-compatible
+ * `/chat/completions` endpoint (OpenAI, DeepSeek, a local Ollama gateway, ...).
+ */
+export interface LlmAnalysisSettings {
+    /** Master switch: show the analysis panel next to the subtitle list. */
+    readonly llmAnalysisEnabled: boolean;
+    /** Automatically analyze each subtitle as it appears (vs. manual button). */
+    readonly llmAutoAnalyze: boolean;
+    /** API key sent as `Authorization: Bearer <key>`. */
+    readonly llmApiKey: string;
+    /** Base URL of the OpenAI-compatible API, e.g. https://api.deepseek.com/v1 */
+    readonly llmBaseUrl: string;
+    /** Model name, e.g. deepseek-chat / gpt-4o-mini. */
+    readonly llmModel: string;
+}
+
 export interface AsbplayerSettings
     extends MiscSettings,
         AnkiSettings,
         SubtitleSettings,
         DictionarySettings,
         StreamingVideoSettings,
+        LlmAnalysisSettings,
         WebSocketClientSettings {
     readonly subtitlePreview: string;
 }
