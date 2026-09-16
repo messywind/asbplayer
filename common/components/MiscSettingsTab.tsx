@@ -113,6 +113,7 @@ const MiscSettingTab: React.FC<Props> = ({
         llmApiKey,
         llmBaseUrl,
         llmModel,
+        llmBackendUrl,
         subtitleAboveThumbnail,
         thumbnailPreview,
         autoPausePreference,
@@ -1083,6 +1084,15 @@ const MiscSettingTab: React.FC<Props> = ({
                     value={llmModel}
                     disabled={!llmAnalysisEnabled}
                     onChange={(e) => onSettingChanged('llmModel', e.target.value)}
+                />
+                <SettingsTextField
+                    color="primary"
+                    fullWidth
+                    label={t('settings.llmBackendUrl')}
+                    value={llmBackendUrl}
+                    disabled={!llmAnalysisEnabled}
+                    helperText={t('settings.llmBackendUrlHelperText')}
+                    onChange={(e) => onSettingChanged('llmBackendUrl', e.target.value)}
                 />
                 <SettingsSection>{t('settings.mining')}</SettingsSection>
                 <NumericSettingInput

@@ -48,7 +48,17 @@
         "translation": "Translation",
         "reading": "Reading",
         "words": "Words",
-        "grammar": "Grammar"
+        "grammar": "Grammar",
+        "copy": "Copy translation",
+        "copied": "Copied",
+        "fromCache": "cached",
+        "backendOn": "Cache server connected",
+        "backendOff": "Direct API (no cache server)",
+        "analyzeEpisode": "Analyze whole episode",
+        "analyzingEpisode": "Analyzing {{done}}/{{total}}…",
+        "episodeDone": "Done — {{analyzed}} new, {{cached}} cached",
+        "episodeNoSubtitles": "Load a subtitle track first.",
+        "stop": "Stop"
     },
     "about": {
         "title": "About asbplayer",
@@ -536,6 +546,8 @@
         "llmBaseUrl": "API Base URL",
         "llmBaseUrlHelperText": "OpenAI-compatible endpoint, e.g. https://api.deepseek.com/v1",
         "llmModel": "Model",
+        "llmBackendUrl": "Cache server URL (optional)",
+        "llmBackendUrlHelperText": "Self-hosted server/ URL, e.g. http://localhost:3939 — persists analyses to a file and keeps the API key server-side. Leave empty to call the API directly.",
         "firefoxExtensionShortcutHelp": "Edit this shortcut from the Plugin manager at about:addons.",
         "postMinePlayback": "Post-mining playback state",
         "pauseOnHoverMode": "Auto-pause when mousing over subtitles",

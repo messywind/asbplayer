@@ -1619,7 +1619,11 @@ function PlayerComponent(
                 </Grid>
                 {settings.llmAnalysisEnabled && !actuallyHideSubtitlePlayer && (
                     <Grid item>
-                        <SubtitleAnalysisPanel settings={settings} showingSubtitles={showingSubtitlesForAnalysis} />
+                        <SubtitleAnalysisPanel
+                            settings={settings}
+                            showingSubtitles={showingSubtitlesForAnalysis}
+                            allSubtitles={subtitles}
+                        />
                     </Grid>
                 )}
             </Grid>

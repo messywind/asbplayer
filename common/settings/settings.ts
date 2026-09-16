@@ -620,6 +620,13 @@ export interface LlmAnalysisSettings {
     readonly llmBaseUrl: string;
     /** Model name, e.g. deepseek-chat / gpt-4o-mini. */
     readonly llmModel: string;
+    /**
+     * Optional URL of the self-hosted cache/proxy server (see `server/`). When
+     * set, analysis requests go through it: results are persisted to a file and
+     * reused across reloads/devices, and the API key lives server-side. When
+     * empty, the browser calls the LLM API directly (in-memory cache only).
+     */
+    readonly llmBackendUrl: string;
 }
 
 export interface AsbplayerSettings

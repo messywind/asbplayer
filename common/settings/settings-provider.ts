@@ -314,6 +314,7 @@ export const defaultSettings: AsbplayerSettings = {
     llmApiKey: '',
     llmBaseUrl: 'https://api.deepseek.com/v1',
     llmModel: 'deepseek-chat',
+    llmBackendUrl: '',
 };
 
 export const NUM_DICTIONARY_TRACKS = defaultSettings.dictionaryTracks.length;

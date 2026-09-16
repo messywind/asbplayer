@@ -54,6 +54,29 @@ corepack yarn workspace @project/client start
 
 分析结果会按“字幕原文”缓存，重复出现的台词不会重复请求。
 
+### 3. 缓存 / 一次性分析整集 / 持久化（可选，推荐）
+
+面板顶部有一个 **「分析整集字幕 (N)」** 按钮：点一下就用并发池把整条字幕轨里所有
+不重复的台词一次性全解析、填进缓存，之后逐句播放直接秒出、不再逐句调接口。
+
+默认缓存只在内存里（刷新即失）。如果你想**持久化到文件**、或**部署到服务器**、
+或**拿数据做统计分析**，就再跑一个随仓库附带的零依赖后端 `server/`：
+
+```bash
+cd server
+cp .env.example .env      # 填入 LLM_API_KEY
+node server.mjs           # 默认 http://localhost:3939
+```
+
+然后在 **设置 → Misc → AI Grammar Analysis → Cache server URL** 填
+`http://localhost:3939`。填了之后：
+
+- API Key 只放在**服务端**，浏览器/部署时不再暴露，也没有 CORS 问题；
+- 每句分析持久化到 `server/data/analyses.json` + `analyses.jsonl`，**跨刷新/设备/用户复用**；
+- `GET /api/stats`、`GET /api/export?format=jsonl|csv` 可直接拿去做统计或喂给 AI。
+
+详见 [`server/README.md`](server/README.md)。留空该设置项则退回“浏览器直连 + 内存缓存”。
+
 ---
 
 ## 改了哪些文件
@@ -63,17 +86,19 @@ corepack yarn workspace @project/client start
 - `common/llm-analysis/` — 与 UI 解耦的分析引擎
   - `types.ts` — 类型定义（`SubtitleAnalysis` / `AnalyzedToken` / `GrammarPoint` / `LlmConfig` …）
   - `llm-analysis.ts` — `analyzeSubtitle()` 主函数、提示词、JSON 解析/校验
+  - `backend-client.ts` — 走缓存服务器的客户端（`analyzeViaBackend` / `fetchBackendStats` / `pingBackend`）
   - `llm-analysis.test.ts` — 单元测试（16 个用例，全绿）
   - `index.ts` — 导出
-- `common/app/components/SubtitleAnalysisPanel.tsx` — 右侧分析面板 React 组件
+- `common/app/components/SubtitleAnalysisPanel.tsx` — 右侧分析面板 React 组件（含整集批量分析 + 进度条 + 缓存状态）
+- `server/` — 零依赖 Node 缓存/代理服务器（文件持久化 + 统计/导出接口 + 8 个 node 测试）
 
 改动：
 
-- `common/settings/settings.ts` — 新增 `LlmAnalysisSettings` 接口并并入 `AsbplayerSettings`
+- `common/settings/settings.ts` — 新增 `LlmAnalysisSettings` 接口（含 `llmBackendUrl`）并并入 `AsbplayerSettings`
 - `common/settings/settings-provider.ts` — 新增默认值
 - `common/settings/settings-import-export.ts` — 把新字段登记进导入/导出白名单
-- `common/components/MiscSettingsTab.tsx` — 在 Misc 标签页里加“AI Grammar Analysis”设置区
-- `common/app/components/Player.tsx` — 记录“当前显示字幕”并在字幕列表右侧挂载分析面板
+- `common/components/MiscSettingsTab.tsx` — 在 Misc 标签页里加“AI Grammar Analysis”设置区（含 Cache server URL）
+- `common/app/components/Player.tsx` — 记录“当前显示字幕”、把整条字幕轨传给面板、在字幕列表右侧挂载分析面板
 - `common/locales/en.json` — 新增文案键
 
 ---
@@ -94,6 +119,7 @@ corepack yarn workspace @project/client start
 
 - `common/llm-analysis` 单元测试：**16/16 通过**（真实 Jest 工具链）。
 - 设置导入/导出测试：**16/16 通过**（确认新设置项登记正确）。
+- 后端 `server/` node 测试：**8/8 通过**，并做了真实 HTTP 端到端验证（同句只调 LLM 一次、落盘、二次命中缓存）。
 - `tsc --noEmit` 对 `common` 工作区：**0 错误**。
 - 客户端生产构建 `yarn workspace @project/client run buildFast`：**构建成功**。
 

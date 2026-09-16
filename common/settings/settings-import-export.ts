@@ -770,6 +770,9 @@ const settingsSchema = {
         llmModel: {
             type: 'string',
         },
+        llmBackendUrl: {
+            type: 'string',
+        },
         _schema: {
             type: 'number',
         },
