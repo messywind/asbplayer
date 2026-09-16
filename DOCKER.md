@@ -1,9 +1,10 @@
 # Docker deployment
 
 The image contains both the built web client and the LLM cache/proxy server.
-The Node server serves the SPA and `/api/*` from the same origin. Analysis data
-is stored in the `asbplayer_data` Docker volume; video and subtitle files remain
-in the user's browser and are not uploaded.
+The Node server serves the SPA and `/api/*` from the same origin. Accounts,
+per-user anime archives, encrypted user API keys, and the globally shared line
+cache are stored in SQLite inside the `asbplayer_data` Docker volume. Video and
+subtitle files remain in the user's browser and are not uploaded.
 
 ## First deployment
 
@@ -16,7 +17,10 @@ cp server/.env.example server/.env
 Edit `server/.env` and set at least:
 
 ```dotenv
-LLM_API_KEY=your-key
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=replace-with-a-long-random-password
+API_KEY_ENCRYPTION_SECRET=replace-with-the-output-of-openssl-rand-hex-32
+SECURE_COOKIES=true
 LLM_BASE_URL=https://api.deepseek.com/v1
 LLM_MODEL=deepseek-chat
 ```
@@ -39,8 +43,10 @@ ASBPLAYER_BIND_ADDRESS=0.0.0.0 docker compose up -d
 Direct public exposure is not recommended because the API spends the configured
 LLM account's credits. Put authentication or an access gateway in front of it.
 
-In the web app, set **Cache server URL** to the public HTTPS origin, for example
-`https://asb.example.com`.
+Log in with the bootstrap administrator account. Use the account button to save
+the administrator's own LLM API Key and generate invitation links. Each invited
+user supplies their own API Key; the server never returns a saved key to the
+browser.
 
 ## Updates
 
@@ -51,7 +57,8 @@ git pull --ff-only origin feature/llm-analysis-full
 VITE_APP_GIT_COMMIT="$(git rev-parse --short HEAD)" docker compose up -d --build
 ```
 
-Rebuilding or replacing the container does not delete the named data volume.
+Rebuilding or replacing the container does not delete the named data volume or
+its `/data/asbplayer.sqlite` database.
 
 ## Backup and restore
 

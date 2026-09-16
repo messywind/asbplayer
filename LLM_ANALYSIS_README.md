@@ -133,16 +133,16 @@ VOICEVOX_SPEAKER=1                     # 音色 id，用上面的 /speakers 查
 
 ```bash
 cd server
-cp .env.example .env      # 填入 LLM_API_KEY
+cp .env.example .env      # 填入管理员账号与 API Key 加密密钥
 node server.mjs           # 默认 http://localhost:3939
 ```
 
-然后在 **设置 → Misc → AI Grammar Analysis → Cache server URL** 填
-`http://localhost:3939`。填了之后：
+多用户部署模式下登录后会自动使用同源后端，无需再填写 Cache server URL。管理员可在前端生成邀请码，
+每个用户在账号中心填写自己的 API Key。启用后：
 
-- API Key 只放在**服务端**，浏览器/部署时不再暴露，也没有 CORS 问题；
-- 每句分析**按番剧 / 集数分文件夹**持久化到 `server/data/<番剧>/<集数>.json`（另有 `analyses.jsonl` 追加日志），
-  内存里再维护一份全局哈希索引做跨集去重 —— **跨刷新/设备/用户复用，重看某集时整包秒载入**；
+- 每个用户的 API Key 使用 AES-256-GCM 加密保存在 SQLite，后端不会把明文返回浏览器；
+- 番剧空间和集数归档按账号隔离，相同字幕分析按文本哈希全局复用；
+- 数据持久化到 `server/data/asbplayer.sqlite`，跨刷新、设备和用户复用；
 - 单词发音用的 VOICEVOX 也由该后端在 `/api/tts` 代理（规避浏览器 CORS）；
 - `GET /api/stats`、`GET /api/library`、`GET /api/export?format=jsonl|csv` 可直接拿去做统计或喂给 AI。
 
@@ -198,7 +198,7 @@ node server.mjs           # 默认 http://localhost:3939
 - `common/app/components/SubtitleAnalysisPanel.tsx` — 右侧分析面板 React 组件（罗马音 + 点词/整句发音 + 整集批量分析 + 进度条 + 缓存状态 + 打开某集时整包载入）
 - `common/app/services/video-audio-recovery.ts` — **MKV 无声修复**：用 ffmpeg.wasm 在浏览器内把不支持的音轨（AC-3/DTS…）转成 AAC，返回可播放的 Blob
 - `common/app/services/sidecar-audio.ts` — 隐藏 `<audio>` 与 `<video>` 的同步控制器（镜像 play/pause/seek/rate/volume + 漂移校正）
-- `server/` — 零依赖 Node 缓存/代理服务器（**按番剧/集数**文件持久化 + VOICEVOX TTS 代理 + 统计/导出/整集接口 + node 测试）
+- `server/` — Node 多用户缓存/代理服务器（邀请账号、加密用户 Key、SQLite 番剧空间、全局分析复用、VOICEVOX 代理）
 
 改动：
 

@@ -147,7 +147,7 @@ const useControlStyles = makeStyles<Theme>((theme) => ({
         pointerEvents: 'auto',
     },
     subContainer: {
-        background: 'linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, .4) 40%, rgba(0, 0, 0, 0.7))',
+        background: 'linear-gradient(to bottom, rgba(0,0,0,0), rgba(0,0,0,.58) 42%, rgba(0,0,0,.82))',
         position: 'relative',
         left: '-100%',
         width: '200%',
@@ -170,10 +170,21 @@ const useControlStyles = makeStyles<Theme>((theme) => ({
     topButton: {
         pointerEvents: 'auto',
         color: '#fff',
+        margin: 6,
+        backgroundColor: 'rgba(28,28,30,.6)',
+        backdropFilter: 'blur(16px)',
+        '&:hover': { backgroundColor: 'rgba(58,58,60,.8)' },
     },
     gridContainer: {
         pointerEvents: 'auto',
-        padding: 2,
+        padding: '4px 8px',
+        width: 'calc(100% - 24px)',
+        margin: '0 12px 12px',
+        borderRadius: 14,
+        backgroundColor: 'rgba(28,28,30,.68)',
+        border: '1px solid rgba(255,255,255,.12)',
+        backdropFilter: 'blur(20px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(160%)',
     },
 }));
 
@@ -251,7 +262,7 @@ const useProgressBarStyles = makeStyles<Theme>((theme) => ({
         height: 8,
     },
     fill: {
-        background: 'linear-gradient(to left, #ff1f62, #49007a)',
+        background: '#0a84ff',
         height: '100%',
     },
     handleContainer: {

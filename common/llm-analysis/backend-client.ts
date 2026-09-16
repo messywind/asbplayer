@@ -1,4 +1,5 @@
-import { LlmAnalysisError, type SubtitleAnalysis } from './types';
+import { LlmAnalysisError } from '@project/common/llm-analysis/types';
+import type { SubtitleAnalysis } from '@project/common/llm-analysis/types';
 
 /**
  * Client for the optional self-hosted cache/proxy server (see repo `server/`).
@@ -33,13 +34,14 @@ function apiUrl(backendUrl: string, path: string): string {
 export interface EpisodeRef {
     anime?: string;
     episode?: string;
+    episodeId?: number;
 }
 
 /** Analyze one line via the backend. */
 export async function analyzeViaBackend(
     backendUrl: string,
     line: string,
-    options?: { force?: boolean; signal?: AbortSignal; anime?: string; episode?: string }
+    options?: { force?: boolean; signal?: AbortSignal; anime?: string; episode?: string; episodeId?: number }
 ): Promise<BackendAnalyzeResult> {
     const text = line.trim();
     if (!text) {
@@ -55,8 +57,10 @@ export async function analyzeViaBackend(
                 force: options?.force ?? false,
                 anime: options?.anime,
                 episode: options?.episode,
+                episodeId: options?.episodeId,
             }),
             signal: options?.signal,
+            credentials: 'include',
         });
     } catch (e) {
         if ((e as Error)?.name === 'AbortError') {
@@ -91,8 +95,12 @@ export async function fetchEpisodeAnalyses(
     signal?: AbortSignal
 ): Promise<EpisodeAnalyses | null> {
     const params = new URLSearchParams({ anime: ref.anime ?? '', episode: ref.episode ?? '' });
+    if (ref.episodeId !== undefined) params.set('episodeId', String(ref.episodeId));
     try {
-        const response = await fetch(apiUrl(backendUrl, `/api/episode?${params.toString()}`), { signal });
+        const response = await fetch(apiUrl(backendUrl, `/api/episode?${params.toString()}`), {
+            signal,
+            credentials: 'include',
+        });
         if (!response.ok) {
             return null;
         }
@@ -113,7 +121,7 @@ export function backendTtsUrl(backendUrl: string, text: string, speaker?: string
 
 /** Fetch aggregate statistics from the backend (for a stats view). */
 export async function fetchBackendStats(backendUrl: string, signal?: AbortSignal): Promise<BackendStats> {
-    const response = await fetch(apiUrl(backendUrl, '/api/stats'), { signal });
+    const response = await fetch(apiUrl(backendUrl, '/api/stats'), { signal, credentials: 'include' });
     if (!response.ok) {
         throw new LlmAnalysisError(`无法获取统计信息 ${response.status}`);
     }
@@ -126,7 +134,7 @@ export async function pingBackend(
     signal?: AbortSignal
 ): Promise<{ ok: boolean; lines: number; model: string; hasKey: boolean; tts?: boolean } | null> {
     try {
-        const response = await fetch(apiUrl(backendUrl, '/api/health'), { signal });
+        const response = await fetch(apiUrl(backendUrl, '/api/health'), { signal, credentials: 'include' });
         if (!response.ok) {
             return null;
         }

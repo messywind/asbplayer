@@ -12,6 +12,7 @@ services:
     environment:
       PORT: 3939
       DATA_DIR: /data
+      DATABASE_PATH: /data/asbplayer.sqlite
       PUBLIC_DIR: /app/client/dist
     ports:
       - "${ASBPLAYER_BIND_ADDRESS:-127.0.0.1}:3939:3939"

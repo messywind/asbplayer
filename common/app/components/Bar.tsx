@@ -16,7 +16,7 @@ import type { TooltipProps } from '@mui/material/Tooltip';
 import Tooltip from '@project/common/components/Tooltip';
 import Typography from '@mui/material/Typography';
 import React, { useCallback, useState } from 'react';
-import GitHubIcon from '@mui/icons-material/GitHub';
+import MoreHorizRoundedIcon from '@mui/icons-material/MoreHorizRounded';
 import List from '@mui/material/List';
 import ListItemButton from '@mui/material/ListItemButton';
 import type { LinkProps as MuiLinkProps } from '@mui/material/Link';
@@ -28,6 +28,9 @@ import Popover from '@mui/material/Popover';
 import ErrorIcon from '@mui/icons-material/Error';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import type { FileWithId } from '@project/common/file-selector';
+import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import SmartDisplayRoundedIcon from '@mui/icons-material/SmartDisplayRounded';
+import Button from '@mui/material/Button';
 
 interface BarProps {
     drawerWidth: number;
@@ -43,6 +46,8 @@ interface BarProps {
     onOpenCopyHistory: () => void;
     onCopyLastError: (error: string) => void;
     onOpenStatistics?: () => void;
+    accountName?: string;
+    onOpenAccount?: () => void;
 }
 
 interface StyleProps {
@@ -52,12 +57,19 @@ interface StyleProps {
 const useStyles = makeStyles<Theme, StyleProps, string>((theme) => ({
     title: {
         flexGrow: 1,
+        minWidth: 0,
     },
     leftButton: {
         marginRight: theme.spacing(1),
     },
     appBar: {
-        background: 'linear-gradient(150deg, #ff1f62, #49007a 160%)',
+        color: theme.palette.text.primary,
+        background:
+            theme.palette.mode === 'dark' ? 'rgba(20,20,22,.82)' : 'rgba(255,255,255,.82)',
+        backdropFilter: 'blur(24px) saturate(170%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(170%)',
+        borderBottom: `1px solid ${theme.palette.divider}`,
+        boxShadow: 'none',
         transition: theme.transitions.create(['margin', 'width'], {
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
@@ -96,6 +108,25 @@ const useStyles = makeStyles<Theme, StyleProps, string>((theme) => ({
         '& .MuiLink-root': {
             textDecoration: 'none',
         },
+    },
+    brandMark: {
+        width: 34,
+        height: 34,
+        flex: '0 0 auto',
+        borderRadius: 10,
+        display: 'grid',
+        placeItems: 'center',
+        color: '#fff',
+        backgroundColor: theme.palette.primary.main,
+        boxShadow: `0 8px 24px ${theme.palette.primary.main}42`,
+        marginRight: theme.spacing(1.25),
+    },
+    accountButton: {
+        maxWidth: 170,
+        marginRight: theme.spacing(0.5),
+        color: theme.palette.text.primary,
+        backgroundColor: theme.palette.action.hover,
+        '&:hover': { backgroundColor: theme.palette.action.selected },
     },
 }));
 
@@ -138,6 +169,8 @@ export default function Bar({
     onDownloadSubtitleTimeline,
     onCopyLastError,
     onOpenStatistics,
+    accountName,
+    onOpenAccount,
 }: BarProps) {
     const classes = useStyles({ drawerWidth });
     const canSaveAsSrt =
@@ -197,7 +230,10 @@ export default function Bar({
                     [classes.hide]: hidden,
                 })}
             >
-                <Toolbar>
+                <Toolbar sx={{ minHeight: { xs: 56, sm: 60 }, px: { xs: 1.5, sm: 2.5 } }}>
+                    <Box className={classes.brandMark}>
+                        <SmartDisplayRoundedIcon sx={{ fontSize: 21 }} />
+                    </Box>
                     {canSaveAsSrt && (
                         <Tooltip title={t('action.downloadSubtitlesAsSrt')}>
                             <IconButton
@@ -210,11 +246,30 @@ export default function Bar({
                             </IconButton>
                         </Tooltip>
                     )}
-                    <Typography variant="h6" noWrap className={classes.title}>
-                        {title}
-                    </Typography>
-                    <IconButton edge="end" color="inherit" onClick={handleMenuOpen}>
-                        <GitHubIcon />
+                    <Box className={classes.title}>
+                        <Typography variant="subtitle1" noWrap sx={{ lineHeight: 1.2, fontWeight: 650 }}>
+                            {title === 'asbplayer' ? '我的播放器' : title}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: 'block' }}>
+                            {title === 'asbplayer' ? '番剧语言学习空间' : '正在播放'}
+                        </Typography>
+                    </Box>
+                    {onOpenAccount && (
+                        <Tooltip title={accountName ? `${accountName} 的番剧空间` : '账号'}>
+                            <Button
+                                className={classes.accountButton}
+                                startIcon={<AccountCircleIcon />}
+                                onClick={onOpenAccount}
+                                sx={{ '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.75 } } }}
+                            >
+                                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                                    {accountName ?? '账号'}
+                                </Box>
+                            </Button>
+                        </Tooltip>
+                    )}
+                    <IconButton aria-label="更多" edge="end" color="inherit" onClick={handleMenuOpen}>
+                        <MoreHorizRoundedIcon />
                     </IconButton>
                     <Tooltip title={t('bar.settings')}>
                         <IconButton edge="end" color="inherit" onClick={onOpenSettings}>

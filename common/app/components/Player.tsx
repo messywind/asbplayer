@@ -81,21 +81,42 @@ interface StylesProps {
     appBarHeight: number;
 }
 
-const useStyles = makeStyles<Theme, StylesProps>(() => ({
+const useStyles = makeStyles<Theme, StylesProps>((theme) => ({
     root: ({ appBarHidden, appBarHeight }) => ({
         height: appBarHidden ? '100vh' : `calc(100vh - ${appBarHeight}px)`,
         position: 'relative',
         overflowX: 'hidden',
+        background:
+            theme.palette.mode === 'dark'
+                ? 'radial-gradient(circle at 25% 0%, rgba(10,132,255,.08), transparent 30%), #0b0b0d'
+                : '#f5f5f7',
     }),
     container: {
         width: '100%',
         height: '100%',
+        boxSizing: 'border-box',
+        padding: 10,
+        gap: 10,
     },
     videoFrame: {
         width: '100%',
         height: '100%',
         border: 0,
         display: 'block',
+        borderRadius: 16,
+        backgroundColor: '#000',
+    },
+    videoPane: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        backgroundColor: '#000',
+        boxShadow: theme.palette.mode === 'dark' ? '0 14px 40px rgba(0,0,0,.34)' : '0 14px 40px rgba(31,38,46,.12)',
+    },
+    sidePane: {
+        borderRadius: 16,
+        overflow: 'hidden',
+        border: `1px solid ${theme.palette.divider}`,
+        backgroundColor: theme.palette.background.paper,
     },
 }));
 
@@ -1548,7 +1569,11 @@ function PlayerComponent(
             {!videoInWindow && statisticsOverlay}
             <Grid container direction="row" wrap="nowrap" className={classes.container}>
                 {videoInWindow && (
-                    <Grid item style={{ flexGrow: 1, minWidth: minVideoPlayerWidth, position: 'relative' }}>
+                    <Grid
+                        item
+                        className={classes.videoPane}
+                        style={{ flexGrow: 1, minWidth: minVideoPlayerWidth, position: 'relative' }}
+                    >
                         {statisticsOverlay}
                         <iframe
                             ref={videoFrameRef}
@@ -1571,6 +1596,7 @@ function PlayerComponent(
 
                 <Grid
                     item
+                    className={classes.sidePane}
                     hidden={actuallyHideSubtitlePlayer}
                     style={{
                         flexGrow: videoInWindow ? 0 : 1,
@@ -1647,7 +1673,7 @@ function PlayerComponent(
                     />
                 </Grid>
                 {settings.llmAnalysisEnabled && !actuallyHideSubtitlePlayer && (
-                    <Grid item>
+                    <Grid item className={classes.sidePane}>
                         <SubtitleAnalysisPanel
                             settings={settings}
                             showingSubtitles={showingSubtitlesForAnalysis}

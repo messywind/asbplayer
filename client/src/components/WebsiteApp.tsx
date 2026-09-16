@@ -1,13 +1,14 @@
 import type { Fetcher } from '@project/common';
 import { useChromeExtension } from '@project/common/app';
 import RootApp from '@project/common/app/components/RootApp';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AppExtensionDictionaryStorage } from '@project/common/app/services/app-extension-dictionary-storage';
 import { AppExtensionSettingsStorage } from '@project/common/app/services/app-extension-settings-storage';
 import { AppExtensionGlobalStateProvider } from '@project/common/app/services/app-extension-global-state-provider';
 import { SettingsProvider } from '@project/common/settings';
 import { LocalDictionaryStorage } from '@project/client/src/local-dictionary-storage';
 import { LocalSettingsStorage } from '@project/client/src/local-settings-storage';
+import AccountGate from '@project/client/src/components/AccountGate';
 
 interface Props {
     origin: string;
@@ -25,20 +26,37 @@ const WebsiteApp = (props: Props) => {
         if (extension.version) window.plausible?.('extension_version', { props: { version: extension.version } });
     }, [extension.version]);
     const settingsProvider = useMemo(() => new SettingsProvider(settingsStorage), [settingsStorage]);
+    const [localizationReady, setLocalizationReady] = useState(false);
+    useEffect(() => {
+        const migrationKey = 'asbplayer.zh-cn-ui.v1';
+        if (localStorage.getItem(migrationKey)) {
+            setLocalizationReady(true);
+            return;
+        }
+
+        void settingsProvider
+            .set({ language: 'zh_CN' })
+            .then(() => localStorage.setItem(migrationKey, '1'))
+            .finally(() => setLocalizationReady(true));
+    }, [settingsProvider]);
     const dictionaryStorage = useMemo(() => {
         if (extension.supportsDictionary) return new AppExtensionDictionaryStorage(extension);
         return new LocalDictionaryStorage(settingsProvider);
     }, [extension, settingsProvider]);
     const globalStateProvider = useMemo(() => new AppExtensionGlobalStateProvider(extension), [extension]);
     return (
-        <RootApp
-            {...props}
-            extension={extension}
-            dictionaryStorage={dictionaryStorage}
-            settingsStorage={settingsStorage}
-            settingsProvider={settingsProvider}
-            globalStateProvider={globalStateProvider}
-        />
+        <AccountGate>
+            {localizationReady && (
+                <RootApp
+                    {...props}
+                    extension={extension}
+                    dictionaryStorage={dictionaryStorage}
+                    settingsStorage={settingsStorage}
+                    settingsProvider={settingsProvider}
+                    globalStateProvider={globalStateProvider}
+                />
+            )}
+        </AccountGate>
     );
 };
 

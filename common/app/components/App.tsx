@@ -87,6 +87,8 @@ import OneUncollectedSentenceDetailsDialog from '@project/common/components/OneU
 import VideoDataSyncDialog, { useVideoDataSyncDialogState } from '@project/common/components/VideoDataSyncDialog';
 import type { FileWithId } from '@project/common/file-selector';
 import { DefaultFileSelector } from '@project/common/file-selector';
+import { useAccount } from '@project/common/app/services/account-context';
+import { AccountCenterDialog, ArchiveAssignmentDialog } from '@project/common/app/components/AccountDialogs';
 
 const latestExtensionVersion = '1.16.0';
 const extensionUrl =
@@ -354,6 +356,7 @@ function App({
     ...profilesContext
 }: Props) {
     const { t } = useTranslation();
+    const account = useAccount();
     const subtitleReader = useMemo<SubtitleReader>(() => {
         return new SubtitleReader({
             regexFilter: settings.subtitleRegexFilter,
@@ -421,6 +424,9 @@ function App({
     const [ankiDialogCard, setAnkiDialogCard] = useState<CardModel>();
     const miningContext = useMemo(() => new MiningContext(), []);
     const [settingsDialogOpen, setSettingsDialogOpen] = useState<boolean>(false);
+    const [accountCenterOpen, setAccountCenterOpen] = useState(false);
+    const [archiveDialogMediaFile, setArchiveDialogMediaFile] = useState<string>();
+    const promptedArchiveSourceRef = useRef<string | undefined>(undefined);
     const [settingsDialogScrollToId, setSettingsDialogScrollToId] = useState<string>();
     const [disableKeyEvents, setDisableKeyEvents] = useState<boolean>(false);
     const [tab, setTab] = useState<VideoTabModel>();
@@ -428,6 +434,14 @@ function App({
     const [isSidePanelOpen, setIsSidePanelOpen] = useState<boolean>(false);
     const [statisticsOverlayOpen, setStatisticsOverlayOpen] = useState<boolean>(false);
     const [statisticsOverlayDismissed, setStatisticsOverlayDismissed] = useState<boolean>(false);
+
+    useEffect(() => {
+        const videoFile = sources.videoFile;
+        if (!account || !videoFile || promptedArchiveSourceRef.current === videoFile.id) return;
+        promptedArchiveSourceRef.current = videoFile.id;
+        account.setActiveEpisode(undefined);
+        setArchiveDialogMediaFile(videoFile.file.name);
+    }, [account, sources.videoFile]);
     const {
         canRestoreLastSession: canRestoreLastFileSession,
         saveSession: saveFileSession,
@@ -1923,6 +1937,23 @@ function App({
                                 scrollToId={settingsDialogScrollToId}
                                 {...profilesContext}
                             />
+                            {account && (
+                                <>
+                                    <AccountCenterDialog
+                                        open={accountCenterOpen}
+                                        onClose={() => setAccountCenterOpen(false)}
+                                    />
+                                    <ArchiveAssignmentDialog
+                                        open={archiveDialogMediaFile !== undefined}
+                                        mediaFileName={archiveDialogMediaFile ?? ''}
+                                        onClose={() => setArchiveDialogMediaFile(undefined)}
+                                        onAssigned={(episode) => {
+                                            account.setActiveEpisode(episode);
+                                            setArchiveDialogMediaFile(undefined);
+                                        }}
+                                    />
+                                </>
+                            )}
                             {globalState && (
                                 <VideoDataSyncDialog
                                     open={subtitleTrackSelectorOpen}
@@ -1977,6 +2008,8 @@ function App({
                                 onOpenSettings={handleOpenSettings}
                                 lastError={lastError}
                                 onCopyLastError={handleCopyLastError}
+                                accountName={account?.user.username}
+                                onOpenAccount={account ? () => setAccountCenterOpen(true) : undefined}
                             />
                             <input
                                 ref={fileInputRef}

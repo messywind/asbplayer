@@ -93,7 +93,7 @@ interface ExperimentalHTMLVideoElement extends HTMLVideoElement {
 const useStyles = makeStyles<Theme>((theme) => ({
     root: {
         position: 'relative',
-        backgroundColor: 'black',
+        backgroundColor: '#000',
         height: '100vh',
         overflow: 'hidden',
         display: 'flex',
@@ -103,6 +103,8 @@ const useStyles = makeStyles<Theme>((theme) => ({
     },
     video: {
         margin: 'auto',
+        maxWidth: '100%',
+        maxHeight: '100%',
     },
     cursorHidden: {
         cursor: 'none',
@@ -115,8 +117,9 @@ const useStyles = makeStyles<Theme>((theme) => ({
     // Small, unobtrusive panel that appears only when the video's audio looks undecodable.
     audioFix: {
         position: 'absolute',
-        top: theme.spacing(1),
-        left: theme.spacing(1),
+        top: theme.spacing(1.5),
+        left: '50%',
+        transform: 'translateX(-50%)',
         zIndex: 5,
         maxWidth: 'min(90%, 30rem)',
         display: 'flex',
@@ -124,8 +127,12 @@ const useStyles = makeStyles<Theme>((theme) => ({
         flexWrap: 'wrap',
         gap: theme.spacing(1),
         padding: theme.spacing(0.75, 1.25),
-        borderRadius: theme.shape.borderRadius,
-        backgroundColor: 'rgba(0, 0, 0, 0.75)',
+        borderRadius: 13,
+        backgroundColor: 'rgba(28,28,30,.76)',
+        border: '1px solid rgba(255,255,255,.14)',
+        backdropFilter: 'blur(20px) saturate(160%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+        boxShadow: '0 12px 36px rgba(0,0,0,.32)',
         color: '#fff',
         fontSize: '0.8rem',
     },

@@ -31,9 +31,9 @@ import {
     parseAnimeEpisode,
     pingBackend,
     LlmAnalysisError,
-    type LlmConfig,
-    type SubtitleAnalysis,
 } from '@project/common/llm-analysis';
+import type { LlmConfig, SubtitleAnalysis } from '@project/common/llm-analysis';
+import { useAccount } from '@project/common/app/services/account-context';
 
 interface Props {
     settings: AsbplayerSettings;
@@ -59,7 +59,7 @@ function cleanText(text: string): string {
     return text
         .replace(HTML_TAG_REGEX, '')
         .replace(ASS_OVERRIDE_REGEX, '')
-        .replace(/​/g, '')
+        .replace(/\u200b/g, '')
         .trim();
 }
 
@@ -118,32 +118,140 @@ const emptyBatch: BatchProgress = { running: false, total: 0, done: 0, analyzed:
 // Display-only romanization of the token reading. Handles hiragana + katakana,
 // palatalized digraphs (きゃ→kya), small tsu gemination (っ), long vowels (ー).
 const ROMAJI_DIGRAPHS: Record<string, string> = {
-    きゃ: 'kya', きゅ: 'kyu', きょ: 'kyo', しゃ: 'sha', しゅ: 'shu', しょ: 'sho',
-    ちゃ: 'cha', ちゅ: 'chu', ちょ: 'cho', にゃ: 'nya', にゅ: 'nyu', にょ: 'nyo',
-    ひゃ: 'hya', ひゅ: 'hyu', ひょ: 'hyo', みゃ: 'mya', みゅ: 'myu', みょ: 'myo',
-    りゃ: 'rya', りゅ: 'ryu', りょ: 'ryo', ぎゃ: 'gya', ぎゅ: 'gyu', ぎょ: 'gyo',
-    じゃ: 'ja', じゅ: 'ju', じょ: 'jo', ぢゃ: 'ja', ぢゅ: 'ju', ぢょ: 'jo',
-    びゃ: 'bya', びゅ: 'byu', びょ: 'byo', ぴゃ: 'pya', ぴゅ: 'pyu', ぴょ: 'pyo',
-    ふぁ: 'fa', ふぃ: 'fi', ふぇ: 'fe', ふぉ: 'fo', てぃ: 'ti', でぃ: 'di',
-    うぃ: 'wi', うぇ: 'we', うぉ: 'wo', ゔぁ: 'va', ゔぃ: 'vi', ゔぇ: 've', ゔぉ: 'vo',
+    きゃ: 'kya',
+    きゅ: 'kyu',
+    きょ: 'kyo',
+    しゃ: 'sha',
+    しゅ: 'shu',
+    しょ: 'sho',
+    ちゃ: 'cha',
+    ちゅ: 'chu',
+    ちょ: 'cho',
+    にゃ: 'nya',
+    にゅ: 'nyu',
+    にょ: 'nyo',
+    ひゃ: 'hya',
+    ひゅ: 'hyu',
+    ひょ: 'hyo',
+    みゃ: 'mya',
+    みゅ: 'myu',
+    みょ: 'myo',
+    りゃ: 'rya',
+    りゅ: 'ryu',
+    りょ: 'ryo',
+    ぎゃ: 'gya',
+    ぎゅ: 'gyu',
+    ぎょ: 'gyo',
+    じゃ: 'ja',
+    じゅ: 'ju',
+    じょ: 'jo',
+    ぢゃ: 'ja',
+    ぢゅ: 'ju',
+    ぢょ: 'jo',
+    びゃ: 'bya',
+    びゅ: 'byu',
+    びょ: 'byo',
+    ぴゃ: 'pya',
+    ぴゅ: 'pyu',
+    ぴょ: 'pyo',
+    ふぁ: 'fa',
+    ふぃ: 'fi',
+    ふぇ: 'fe',
+    ふぉ: 'fo',
+    てぃ: 'ti',
+    でぃ: 'di',
+    うぃ: 'wi',
+    うぇ: 'we',
+    うぉ: 'wo',
+    ゔぁ: 'va',
+    ゔぃ: 'vi',
+    ゔぇ: 've',
+    ゔぉ: 'vo',
 };
 const ROMAJI_MONO: Record<string, string> = {
-    あ: 'a', い: 'i', う: 'u', え: 'e', お: 'o',
-    か: 'ka', き: 'ki', く: 'ku', け: 'ke', こ: 'ko',
-    が: 'ga', ぎ: 'gi', ぐ: 'gu', げ: 'ge', ご: 'go',
-    さ: 'sa', し: 'shi', す: 'su', せ: 'se', そ: 'so',
-    ざ: 'za', じ: 'ji', ず: 'zu', ぜ: 'ze', ぞ: 'zo',
-    た: 'ta', ち: 'chi', つ: 'tsu', て: 'te', と: 'to',
-    だ: 'da', ぢ: 'ji', づ: 'zu', で: 'de', ど: 'do',
-    な: 'na', に: 'ni', ぬ: 'nu', ね: 'ne', の: 'no',
-    は: 'ha', ひ: 'hi', ふ: 'fu', へ: 'he', ほ: 'ho',
-    ば: 'ba', び: 'bi', ぶ: 'bu', べ: 'be', ぼ: 'bo',
-    ぱ: 'pa', ぴ: 'pi', ぷ: 'pu', ぺ: 'pe', ぽ: 'po',
-    ま: 'ma', み: 'mi', む: 'mu', め: 'me', も: 'mo',
-    や: 'ya', ゆ: 'yu', よ: 'yo',
-    ら: 'ra', り: 'ri', る: 'ru', れ: 're', ろ: 'ro',
-    わ: 'wa', ゐ: 'wi', ゑ: 'we', を: 'wo', ん: 'n', ゔ: 'vu',
-    ぁ: 'a', ぃ: 'i', ぅ: 'u', ぇ: 'e', ぉ: 'o', ゃ: 'ya', ゅ: 'yu', ょ: 'yo', ゎ: 'wa',
+    あ: 'a',
+    い: 'i',
+    う: 'u',
+    え: 'e',
+    お: 'o',
+    か: 'ka',
+    き: 'ki',
+    く: 'ku',
+    け: 'ke',
+    こ: 'ko',
+    が: 'ga',
+    ぎ: 'gi',
+    ぐ: 'gu',
+    げ: 'ge',
+    ご: 'go',
+    さ: 'sa',
+    し: 'shi',
+    す: 'su',
+    せ: 'se',
+    そ: 'so',
+    ざ: 'za',
+    じ: 'ji',
+    ず: 'zu',
+    ぜ: 'ze',
+    ぞ: 'zo',
+    た: 'ta',
+    ち: 'chi',
+    つ: 'tsu',
+    て: 'te',
+    と: 'to',
+    だ: 'da',
+    ぢ: 'ji',
+    づ: 'zu',
+    で: 'de',
+    ど: 'do',
+    な: 'na',
+    に: 'ni',
+    ぬ: 'nu',
+    ね: 'ne',
+    の: 'no',
+    は: 'ha',
+    ひ: 'hi',
+    ふ: 'fu',
+    へ: 'he',
+    ほ: 'ho',
+    ば: 'ba',
+    び: 'bi',
+    ぶ: 'bu',
+    べ: 'be',
+    ぼ: 'bo',
+    ぱ: 'pa',
+    ぴ: 'pi',
+    ぷ: 'pu',
+    ぺ: 'pe',
+    ぽ: 'po',
+    ま: 'ma',
+    み: 'mi',
+    む: 'mu',
+    め: 'me',
+    も: 'mo',
+    や: 'ya',
+    ゆ: 'yu',
+    よ: 'yo',
+    ら: 'ra',
+    り: 'ri',
+    る: 'ru',
+    れ: 're',
+    ろ: 'ro',
+    わ: 'wa',
+    ゐ: 'wi',
+    ゑ: 'we',
+    を: 'wo',
+    ん: 'n',
+    ゔ: 'vu',
+    ぁ: 'a',
+    ぃ: 'i',
+    ぅ: 'u',
+    ぇ: 'e',
+    ぉ: 'o',
+    ゃ: 'ya',
+    ゅ: 'yu',
+    ょ: 'yo',
+    ゎ: 'wa',
 };
 
 function toHiragana(s: string): string {
@@ -331,6 +439,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
     width = 360,
 }) => {
     const { t } = useTranslation();
+    const account = useAccount();
     const line = useMemo(() => currentLineText(showingSubtitles), [showingSubtitles]);
     const { anime, episode } = useMemo(() => parseAnimeEpisode(mediaFileName), [mediaFileName]);
 
@@ -347,7 +456,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
     const abortRef = useRef<AbortController | undefined>(undefined);
     const batchAbortRef = useRef<AbortController | undefined>(undefined);
 
-    const backendUrl = settings.llmBackendUrl?.trim() ?? '';
+    const backendUrl = account ? window.location.origin : (settings.llmBackendUrl?.trim() ?? '');
     const usingBackend = backendUrl.length > 0;
     const configured = usingBackend || Boolean(settings.llmApiKey && settings.llmBaseUrl && settings.llmModel);
 
@@ -358,7 +467,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
             return;
         }
         const controller = new AbortController();
-        pingBackend(backendUrl, controller.signal).then((h) => setBackendOnline(Boolean(h?.ok)));
+        void pingBackend(backendUrl, controller.signal).then((h) => setBackendOnline(Boolean(h?.ok)));
         return () => controller.abort();
     }, [usingBackend, backendUrl]);
 
@@ -418,11 +527,15 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
     const lineRef = useRef(line);
     lineRef.current = line;
     useEffect(() => {
-        if (!usingBackend || !(anime || episode)) {
+        if (!usingBackend || (!account?.activeEpisode?.id && !(anime || episode))) {
             return;
         }
         const controller = new AbortController();
-        fetchEpisodeAnalyses(backendUrl, { anime, episode }, controller.signal).then((res) => {
+        void fetchEpisodeAnalyses(
+            backendUrl,
+            { anime, episode, episodeId: account?.activeEpisode?.id },
+            controller.signal
+        ).then((res) => {
             if (!res || controller.signal.aborted) {
                 return;
             }
@@ -441,19 +554,29 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
             }
         });
         return () => controller.abort();
-    }, [usingBackend, backendUrl, anime, episode]);
+    }, [usingBackend, backendUrl, anime, episode, account?.activeEpisode?.id]);
 
     // Single source of truth for "analyze one line", routed via backend or direct API.
     const resolveAnalysis = useCallback(
-        async (text: string, force: boolean, signal: AbortSignal): Promise<{ analysis: SubtitleAnalysis; cached: boolean }> => {
+        async (
+            text: string,
+            force: boolean,
+            signal: AbortSignal
+        ): Promise<{ analysis: SubtitleAnalysis; cached: boolean }> => {
             if (usingBackend) {
-                const r = await analyzeViaBackend(backendUrl, text, { force, signal, anime, episode });
+                const r = await analyzeViaBackend(backendUrl, text, {
+                    force,
+                    signal,
+                    anime,
+                    episode,
+                    episodeId: account?.activeEpisode?.id,
+                });
                 return { analysis: r.analysis, cached: r.cached };
             }
             const result = await analyzeSubtitle(text, configFromSettings(settings), { signal });
             return { analysis: result, cached: false };
         },
-        [usingBackend, backendUrl, anime, episode, settings]
+        [usingBackend, backendUrl, anime, episode, settings, account?.activeEpisode?.id]
     );
 
     const runAnalysis = useCallback(
@@ -548,7 +671,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                     analyzed: p.analyzed + (cached ? 0 : 1),
                     cached: p.cached + (cached ? 1 : 0),
                 }));
-            } catch (e) {
+            } catch {
                 if (controller.signal.aborted) {
                     return;
                 }
@@ -586,25 +709,40 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
 
     return (
         <Paper
-            square
             elevation={0}
             sx={{
                 width,
                 minWidth: width,
                 height: '100%',
                 overflowY: 'auto',
-                borderLeft: 1,
-                borderColor: 'divider',
-                p: 1.5,
-                bgcolor: 'background.default',
+                p: 2,
+                bgcolor: 'background.paper',
             }}
         >
             {/* Header */}
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                <AutoAwesomeIcon fontSize="small" color="primary" />
-                <Typography variant="subtitle2" sx={{ flexGrow: 1, fontWeight: 700 }}>
-                    {t('llmAnalysis.title')}
-                </Typography>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
+                <Box
+                    sx={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: '10px',
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: 'primary.main',
+                        bgcolor: (theme) =>
+                            theme.palette.mode === 'dark' ? 'rgba(10,132,255,.16)' : 'rgba(0,122,255,.1)',
+                    }}
+                >
+                    <AutoAwesomeIcon fontSize="small" />
+                </Box>
+                <Box sx={{ flexGrow: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+                        {t('llmAnalysis.title')}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        翻译、词汇与语法解析
+                    </Typography>
+                </Box>
                 {usingBackend && backendOnline !== undefined && (
                     <Tooltip title={backendOnline ? t('llmAnalysis.backendOn') : t('llmAnalysis.backendOff')} arrow>
                         {backendOnline ? (
@@ -631,7 +769,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
 
             {/* Episode batch control */}
             {configured && episodeLineCount > 0 && (
-                <Box sx={{ mb: 1 }}>
+                <Box sx={{ mb: 1.5 }}>
                     {!batch.running ? (
                         <Button
                             size="small"
@@ -639,6 +777,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                             variant="outlined"
                             startIcon={<PlaylistPlayIcon />}
                             onClick={() => void runBatch()}
+                            sx={{ borderRadius: '11px', py: 0.75 }}
                         >
                             {t('llmAnalysis.analyzeEpisode')} ({episodeLineCount})
                         </Button>
@@ -666,7 +805,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                 </Box>
             )}
 
-            <Divider sx={{ mb: 1 }} />
+            <Divider sx={{ mb: 1.5 }} />
 
             {!configured && (
                 <Alert severity="info" sx={{ mb: 1 }}>
@@ -683,8 +822,19 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
             {line && (
                 <>
                     {/* Source line */}
-                    <Stack direction="row" alignItems="flex-start" spacing={0.5} sx={{ mb: 1 }}>
-                        <Typography variant="body1" sx={{ fontWeight: 600, flexGrow: 1, lineHeight: 1.4 }}>
+                    <Stack
+                        direction="row"
+                        alignItems="flex-start"
+                        spacing={0.5}
+                        sx={{
+                            mb: 1.5,
+                            p: 1.5,
+                            borderRadius: '12px',
+                            bgcolor: (theme) =>
+                                theme.palette.mode === 'dark' ? 'rgba(255,255,255,.045)' : 'rgba(118,118,128,.07)',
+                        }}
+                    >
+                        <Typography variant="body1" sx={{ fontWeight: 600, flexGrow: 1, lineHeight: 1.55 }}>
                             {line}
                         </Typography>
                         <Tooltip title={lineAudioAvailable ? t('llmAnalysis.playAudio') : t('llmAnalysis.speak')} arrow>
@@ -738,7 +888,10 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                                                     sx={{ height: 18, fontSize: '0.62rem' }}
                                                 />
                                             )}
-                                            <Tooltip title={copied ? t('llmAnalysis.copied') : t('llmAnalysis.copy')} arrow>
+                                            <Tooltip
+                                                title={copied ? t('llmAnalysis.copied') : t('llmAnalysis.copy')}
+                                                arrow
+                                            >
                                                 <IconButton size="small" onClick={copyTranslation} sx={{ p: 0.25 }}>
                                                     {copied ? (
                                                         <CheckIcon sx={{ fontSize: '0.9rem' }} color="success" />

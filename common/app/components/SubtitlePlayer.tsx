@@ -120,7 +120,7 @@ interface StylesProps {
 
 const useSubtitlePlayerStyles = makeStyles<Theme, StylesProps, string>((theme) => ({
     container: {
-        height: ({ appBarHidden, appBarHeight }) => (appBarHidden ? '100vh' : `calc(100vh - ${appBarHeight}px)`),
+        height: '100%',
         position: 'relative',
         overflow: 'hidden',
         backgroundColor: theme.palette.background.default,
@@ -143,20 +143,24 @@ const useSubtitlePlayerStyles = makeStyles<Theme, StylesProps, string>((theme) =
 const useSubtitleRowStyles = makeStyles<Theme>((theme) => ({
     subtitleRow: {
         '&:hover': {
-            backgroundColor: theme.palette.action.hover,
+            backgroundColor: theme.palette.action.selected,
         },
+        cursor: 'pointer',
+        transition: theme.transitions.create(['background-color', 'filter'], { duration: 160 }),
+        '& td': { borderColor: theme.palette.divider },
         minWidth: 250,
     },
     selectedSubtitleRow: {
         minWidth: 250,
         '& td': {
-            borderColor: theme.palette.background.paper,
+            borderColor: theme.palette.divider,
         },
         animation: `$select-subtitle-row 300ms ${theme.transitions.easing.easeInOut} forwards`,
     },
     '@keyframes select-subtitle-row': {
         '100%': {
-            backgroundColor: theme.palette.background.paper,
+            backgroundColor:
+                theme.palette.mode === 'dark' ? 'rgba(10,132,255,.16)' : 'rgba(0,122,255,.1)',
         },
     },
     unselectedSubtitleRow: {
@@ -175,6 +179,9 @@ const useSubtitleRowStyles = makeStyles<Theme>((theme) => ({
         width: '100%',
         overflowWrap: 'anywhere',
         whiteSpace: 'pre-wrap',
+        lineHeight: 1.55,
+        paddingTop: 14,
+        paddingBottom: 14,
     },
     compressedSubtitle: {
         fontSize: 16,
@@ -182,6 +189,9 @@ const useSubtitleRowStyles = makeStyles<Theme>((theme) => ({
         width: '100%',
         overflowWrap: 'anywhere',
         whiteSpace: 'pre-wrap',
+        lineHeight: 1.5,
+        paddingTop: 12,
+        paddingBottom: 12,
     },
     disabledSubtitle: {
         color: 'transparent',
@@ -193,7 +203,7 @@ const useSubtitleRowStyles = makeStyles<Theme>((theme) => ({
     },
     timestamp: {
         fontSize: 14,
-        color: '#aaaaaa',
+        color: theme.palette.text.secondary,
         textAlign: 'right',
         paddingRight: 15,
         paddingLeft: 5,
@@ -1485,7 +1495,7 @@ export default function SubtitlePlayer({
 
     return (
         <Paper
-            square
+            elevation={0}
             className={`${classes.container} asbplayer-token-container`}
             tabIndex={-1}
             style={{

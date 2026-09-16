@@ -43,6 +43,7 @@ import { normalizePlaybackRate } from '@project/common/playback/controllers/play
 import { normalizeAutoPauseDurationBounds } from '@project/common/playback/plan/playback-plan';
 import NumericSettingInput from '@project/common/components/NumericSettingInput';
 import KeyboardShortcutLink from '@project/common/components/KeyboardShortcutLink';
+import { useAccount } from '@project/common/app/services/account-context';
 
 function regexIsValid(regex: string) {
     try {
@@ -89,6 +90,7 @@ const MiscSettingTab: React.FC<Props> = ({
     onViewSubtitleKeyboardShortcuts,
 }) => {
     const { t } = useTranslation();
+    const account = useAccount();
     const {
         themeType,
         videoSubtitleSplitBehavior,
@@ -1059,41 +1061,50 @@ const MiscSettingTab: React.FC<Props> = ({
                     label={t('settings.llmAutoAnalyze')}
                     labelPlacement="start"
                 />
-                <SettingsTextField
-                    color="primary"
-                    fullWidth
-                    type="password"
-                    label={t('settings.llmApiKey')}
-                    value={llmApiKey}
-                    disabled={!llmAnalysisEnabled}
-                    onChange={(e) => onSettingChanged('llmApiKey', e.target.value)}
-                />
-                <SettingsTextField
-                    color="primary"
-                    fullWidth
-                    label={t('settings.llmBaseUrl')}
-                    value={llmBaseUrl}
-                    disabled={!llmAnalysisEnabled}
-                    helperText={t('settings.llmBaseUrlHelperText')}
-                    onChange={(e) => onSettingChanged('llmBaseUrl', e.target.value)}
-                />
-                <SettingsTextField
-                    color="primary"
-                    fullWidth
-                    label={t('settings.llmModel')}
-                    value={llmModel}
-                    disabled={!llmAnalysisEnabled}
-                    onChange={(e) => onSettingChanged('llmModel', e.target.value)}
-                />
-                <SettingsTextField
-                    color="primary"
-                    fullWidth
-                    label={t('settings.llmBackendUrl')}
-                    value={llmBackendUrl}
-                    disabled={!llmAnalysisEnabled}
-                    helperText={t('settings.llmBackendUrlHelperText')}
-                    onChange={(e) => onSettingChanged('llmBackendUrl', e.target.value)}
-                />
+                {account ? (
+                    <Typography color="text.secondary">
+                        登录模式下，API Key 请在顶部账号按钮中的“LLM API
+                        Key”页面配置；模型和缓存服务器由管理员统一管理。
+                    </Typography>
+                ) : (
+                    <>
+                        <SettingsTextField
+                            color="primary"
+                            fullWidth
+                            type="password"
+                            label={t('settings.llmApiKey')}
+                            value={llmApiKey}
+                            disabled={!llmAnalysisEnabled}
+                            onChange={(e) => onSettingChanged('llmApiKey', e.target.value)}
+                        />
+                        <SettingsTextField
+                            color="primary"
+                            fullWidth
+                            label={t('settings.llmBaseUrl')}
+                            value={llmBaseUrl}
+                            disabled={!llmAnalysisEnabled}
+                            helperText={t('settings.llmBaseUrlHelperText')}
+                            onChange={(e) => onSettingChanged('llmBaseUrl', e.target.value)}
+                        />
+                        <SettingsTextField
+                            color="primary"
+                            fullWidth
+                            label={t('settings.llmModel')}
+                            value={llmModel}
+                            disabled={!llmAnalysisEnabled}
+                            onChange={(e) => onSettingChanged('llmModel', e.target.value)}
+                        />
+                        <SettingsTextField
+                            color="primary"
+                            fullWidth
+                            label={t('settings.llmBackendUrl')}
+                            value={llmBackendUrl}
+                            disabled={!llmAnalysisEnabled}
+                            helperText={t('settings.llmBackendUrlHelperText')}
+                            onChange={(e) => onSettingChanged('llmBackendUrl', e.target.value)}
+                        />
+                    </>
+                )}
                 <SettingsSection>{t('settings.mining')}</SettingsSection>
                 <NumericSettingInput
                     label={t('settings.miningHistoryStorageLimit')}

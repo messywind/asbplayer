@@ -6,6 +6,8 @@ import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { AnalysisStore, hashLine } from './lib/store.mjs';
 import { analyzeLine, extractJsonObject, coerceAnalysis, normalizeLine, LlmAnalysisError } from './lib/llm.mjs';
+import { MultiUserDatabase } from './lib/database.mjs';
+import { decryptSecret, encryptSecret, hashPassword, verifyPassword } from './lib/auth.mjs';
 
 async function tmpDir() {
     return await fs.mkdtemp(path.join(os.tmpdir(), 'asb-store-'));
@@ -158,4 +160,46 @@ test('getOrCreateAnalysis caches: LLM called once for repeated line', async () =
     assert.equal(r2.cached, true);
     assert.equal(f.calls(), 1, 'second identical line must not call the LLM');
     await s.close();
+});
+
+test('password hashes and encrypted API keys do not expose plaintext', async () => {
+    const passwordHash = await hashPassword('a-long-test-password');
+    assert.ok(!passwordHash.includes('a-long-test-password'));
+    assert.equal(await verifyPassword('a-long-test-password', passwordHash), true);
+    assert.equal(await verifyPassword('wrong-password', passwordHash), false);
+
+    const encrypted = encryptSecret('sk-user-secret', 'test-encryption-secret-that-is-long-enough');
+    assert.ok(!encrypted.includes('sk-user-secret'));
+    assert.equal(decryptSecret(encrypted, 'test-encryption-secret-that-is-long-enough'), 'sk-user-secret');
+});
+
+test('multi-user archives are isolated while analyses are globally shared', async () => {
+    const db = new MultiUserDatabase(':memory:');
+    const admin = db.createUser('admin', 'hash', 'admin');
+    const invite = db.createInvite(admin.id, 'invite-code', 2, new Date(Date.now() + 60_000).toISOString());
+    assert.equal(invite.uses, 0);
+
+    const alice = db.registerWithInvite({ code: 'invite-code', username: 'alice', passwordHash: 'a' });
+    const bob = db.registerWithInvite({ code: 'invite-code', username: 'bob', passwordHash: 'b' });
+    const aliceSpace = db.createSpace(alice.id, 'Frieren');
+    const bobSpace = db.createSpace(bob.id, 'Private show');
+    const aliceEpisode = db.createOrUpdateEpisode(alice.id, aliceSpace.id, '01', 'frieren-01.mkv');
+    const bobEpisode = db.createOrUpdateEpisode(bob.id, bobSpace.id, '02', 'private-02.mkv');
+
+    db.putAnalysis('次は', SAMPLE, 'deepseek-chat');
+    db.associateAnalysis(alice.id, aliceEpisode.id, '次は');
+    db.associateAnalysis(bob.id, bobEpisode.id, '次は');
+
+    assert.equal(db.analysisCount, 1, 'the identical line has one global analysis');
+    assert.deepEqual(
+        db.library(alice.id).map((space) => space.name),
+        ['Frieren']
+    );
+    assert.deepEqual(
+        db.library(bob.id).map((space) => space.name),
+        ['Private show']
+    );
+    assert.equal(db.getEpisode(alice.id, bobEpisode.id), undefined, 'users cannot read another user episode');
+    assert.equal(db.getEpisode(alice.id, aliceEpisode.id).analyses['次は'].translation, SAMPLE.translation);
+    db.close();
 });
