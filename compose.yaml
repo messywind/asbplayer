@@ -1,0 +1,22 @@
+services:
+  asbplayer:
+    image: asbplayer-llm:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_APP_GIT_COMMIT: ${VITE_APP_GIT_COMMIT:-docker}
+    restart: unless-stopped
+    env_file:
+      - ./server/.env
+    environment:
+      PORT: 3939
+      DATA_DIR: /data
+      PUBLIC_DIR: /app/client/dist
+    ports:
+      - "${ASBPLAYER_BIND_ADDRESS:-127.0.0.1}:3939:3939"
+    volumes:
+      - asbplayer_data:/data
+
+volumes:
+  asbplayer_data:
