@@ -263,3 +263,25 @@ test('public and admin user summaries include spaces without exposing episode de
     assert.equal(db.getUserById(admin.id).username, 'admin-user');
     db.close();
 });
+
+test('users can delete their own episodes and spaces without deleting shared analyses', () => {
+    const db = new MultiUserDatabase(':memory:');
+    const alice = db.createUser('delete-alice', 'hash');
+    const bob = db.createUser('delete-bob', 'hash');
+    const aliceSpace = db.createSpace(alice.id, 'Alice show');
+    const bobSpace = db.createSpace(bob.id, 'Bob show');
+    const aliceEpisode = db.createOrUpdateEpisode(alice.id, aliceSpace.id, '01', 'alice.mkv');
+    const bobEpisode = db.createOrUpdateEpisode(bob.id, bobSpace.id, '01', 'bob.mkv');
+    db.putAnalysis('次は', SAMPLE, 'deepseek-chat');
+    db.associateAnalysis(alice.id, aliceEpisode.id, '次は');
+    db.associateAnalysis(bob.id, bobEpisode.id, '次は');
+
+    assert.equal(db.deleteEpisode(alice.id, bobEpisode.id), false, 'cannot delete another user episode');
+    assert.equal(db.deleteEpisode(alice.id, aliceEpisode.id), true);
+    assert.equal(db.getEpisode(alice.id, aliceEpisode.id), undefined);
+    assert.equal(db.analysisCount, 1, 'global cache remains after deleting an episode association');
+    assert.equal(db.deleteSpace(alice.id, bobSpace.id), false, 'cannot delete another user space');
+    assert.equal(db.deleteSpace(bob.id, bobSpace.id), true);
+    assert.equal(db.library(bob.id).length, 0);
+    db.close();
+});

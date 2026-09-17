@@ -3,6 +3,10 @@ import React, { useEffect, useState, useMemo, useCallback, useRef, useImperative
 import { makeStyles } from '@mui/styles';
 import type { Theme } from '@mui/material';
 import Button from '@mui/material/Button';
+import IconButton from '@mui/material/IconButton';
+import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import Tooltip from '@project/common/components/Tooltip';
 import { useTranslation } from 'react-i18next';
 import { v4 as uuidv4 } from 'uuid';
 import type {
@@ -282,6 +286,7 @@ function PlayerComponent(
     const playbackPositionKey = videoFile?.file.name;
     const syntheticPlayback = videoFileUrl === undefined && tab === undefined;
     const playModeEnabled = subtitles && subtitles.length > 0 && Boolean(videoFileUrl);
+    const [subtitleListCollapsed, setSubtitleListCollapsed] = useState(false);
     const [subtitlePlayerResizing, setSubtitlePlayerResizing] = useState<boolean>(false);
     const [loadingSubtitles, setLoadingSubtitles] = useState<boolean>(false);
     const [lastJumpToTopTimestamp, setLastJumpToTopTimestamp] = useState<number>(0);
@@ -1532,6 +1537,10 @@ function PlayerComponent(
     const actuallyHideSubtitlePlayer =
         videoInWindow &&
         (hideSubtitlePlayer || !subtitles || subtitles?.length === 0 || notEnoughSpaceForSubtitlePlayer);
+    const collapseSubtitleList = videoInWindow && subtitleListCollapsed;
+    const subtitleListToggleLabel = t(
+        collapseSubtitleList ? 'controls.showSubtitlePlayer' : 'controls.hideSubtitlePlayer'
+    );
     const handleAlertClosed = useCallback(() => setAlert((alert) => ({ ...alert, open: false })), []);
 
     return (
@@ -1600,77 +1609,109 @@ function PlayerComponent(
                     hidden={actuallyHideSubtitlePlayer}
                     style={{
                         flexGrow: videoInWindow ? 0 : 1,
-                        width: 'auto',
+                        width: collapseSubtitleList ? 36 : 'auto',
+                        flexShrink: 0,
+                        display: actuallyHideSubtitlePlayer ? 'none' : 'flex',
+                        flexDirection: 'column',
+                        ...(collapseSubtitleList && { border: 0, background: 'transparent' }),
                     }}
                 >
-                    {loaded && !(videoFileUrl && !videoPopOut) && !hideControls && (
-                        <Controls
-                            mousePositionRef={mousePositionRef}
-                            clock={clock}
-                            length={calculateLengthMs(videoDurationRef)}
-                            displayLength={calculateLengthMs(videoDurationRef, subtitles)}
-                            audioTracks={audioTracks}
-                            selectedAudioTrack={selectedAudioTrack}
-                            tabs={(!videoFileUrl && availableTabs) || undefined}
-                            selectedTab={tab}
-                            offsetEnabled={true}
-                            offset={offset}
-                            playbackRate={playbackRate}
-                            playbackRateEnabled={!tab || extension.supportsPlaybackRateMessage}
-                            onPlaybackRateChange={handlePlaybackRateChange}
-                            playModeEnabled={playModeEnabled}
-                            playModes={playModes}
-                            onPlay={handlePlay}
-                            onPause={handlePause}
-                            onSeek={handleSeek}
-                            onAudioTrackSelected={handleAudioTrackSelected}
-                            onTabSelected={onTabSelected}
-                            onOffsetChange={handleOffsetChange}
-                            onPlayMode={handlePlayMode}
-                            onLoadSubtitles={onLoadSubtitles}
-                            disableKeyEvents={disableKeyEvents}
-                            playbackPreferences={playbackPreferences}
-                            showOnMouseMovement={true}
-                            previewEnabled={false}
-                        />
+                    {videoInWindow && (
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', flexShrink: 0 }}>
+                            <Tooltip title={subtitleListToggleLabel}>
+                                <IconButton
+                                    size="small"
+                                    aria-label={subtitleListToggleLabel}
+                                    aria-expanded={!collapseSubtitleList}
+                                    aria-controls="player-subtitle-list"
+                                    onClick={() => setSubtitleListCollapsed((collapsed) => !collapsed)}
+                                    sx={{
+                                        width: 36,
+                                        height: 36,
+                                        borderRadius: 2,
+                                        bgcolor: 'background.paper',
+                                        '&.Mui-focusVisible': {
+                                            outline: '2px solid',
+                                            outlineColor: 'primary.main',
+                                            outlineOffset: -2,
+                                        },
+                                    }}
+                                >
+                                    {collapseSubtitleList ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+                                </IconButton>
+                            </Tooltip>
+                        </div>
                     )}
-                    <SubtitlePlayer
-                        subtitles={subtitles}
-                        subtitleCollection={subtitleCollection}
-                        playbackState={playbackState}
-                        clock={clock}
-                        extension={extension}
-                        length={calculateLengthMs(videoDurationRef)}
-                        jumpToSubtitle={jumpToSubtitle}
-                        onJumpToSubtitleHandled={onJumpToSubtitleHandled}
-                        drawerOpen={drawerOpen}
-                        appBarHidden={appBarHidden}
-                        compressed={videoInWindow || (forceCompressedMode ?? false)}
-                        resizable={videoInWindow}
-                        showCopyButton={showCopyButton}
-                        loading={loadingSubtitles}
-                        displayHelp={(videoPopOut && videoFile?.file?.name) || undefined}
-                        disableKeyEvents={disableKeyEvents}
-                        // On later versions of the extension, VideoPlayer will receive the mining commands instead
-                        disableMiningBinds={extension.supportsVideoPlayerMiningCommands && videoFile !== undefined}
-                        lastJumpToTopTimestamp={lastJumpToTopTimestamp}
-                        hidden={actuallyHideSubtitlePlayer}
-                        disabledSubtitleTracks={disabledSubtitleTracks}
-                        onSeek={handleSeekToTimestamp}
-                        onCopy={handleCopyFromSubtitlePlayer}
-                        onMouseOver={handleMouseOver}
-                        onMouseOut={handleMouseOut}
-                        onOffsetChange={handleOffsetChange}
-                        onToggleSubtitleTrack={handleToggleSubtitleTrack}
-                        onSubtitlesHighlighted={handleSubtitlesHighlighted}
-                        onResizeStart={handleSubtitlePlayerResizeStart}
-                        onResizeEnd={handleSubtitlePlayerResizeEnd}
-                        maxResizeWidth={subtitlePlayerMaxResizeWidth}
-                        settings={settings}
-                        keyBinder={keyBinder}
-                        webSocketClient={webSocketClient}
-                        initialWidth={subtitlePlayerInitialWidth}
-                    />
+                    <div id="player-subtitle-list" hidden={collapseSubtitleList} style={{ flex: 1, minHeight: 0 }}>
+                        {loaded && !(videoFileUrl && !videoPopOut) && !hideControls && (
+                            <Controls
+                                mousePositionRef={mousePositionRef}
+                                clock={clock}
+                                length={calculateLengthMs(videoDurationRef)}
+                                displayLength={calculateLengthMs(videoDurationRef, subtitles)}
+                                audioTracks={audioTracks}
+                                selectedAudioTrack={selectedAudioTrack}
+                                tabs={(!videoFileUrl && availableTabs) || undefined}
+                                selectedTab={tab}
+                                offsetEnabled={true}
+                                offset={offset}
+                                playbackRate={playbackRate}
+                                playbackRateEnabled={!tab || extension.supportsPlaybackRateMessage}
+                                onPlaybackRateChange={handlePlaybackRateChange}
+                                playModeEnabled={playModeEnabled}
+                                playModes={playModes}
+                                onPlay={handlePlay}
+                                onPause={handlePause}
+                                onSeek={handleSeek}
+                                onAudioTrackSelected={handleAudioTrackSelected}
+                                onTabSelected={onTabSelected}
+                                onOffsetChange={handleOffsetChange}
+                                onPlayMode={handlePlayMode}
+                                onLoadSubtitles={onLoadSubtitles}
+                                disableKeyEvents={disableKeyEvents}
+                                playbackPreferences={playbackPreferences}
+                                showOnMouseMovement={true}
+                                previewEnabled={false}
+                            />
+                        )}
+                        <SubtitlePlayer
+                            subtitles={subtitles}
+                            subtitleCollection={subtitleCollection}
+                            playbackState={playbackState}
+                            clock={clock}
+                            extension={extension}
+                            length={calculateLengthMs(videoDurationRef)}
+                            jumpToSubtitle={jumpToSubtitle}
+                            onJumpToSubtitleHandled={onJumpToSubtitleHandled}
+                            drawerOpen={drawerOpen}
+                            appBarHidden={appBarHidden}
+                            compressed={videoInWindow || (forceCompressedMode ?? false)}
+                            resizable={videoInWindow}
+                            showCopyButton={showCopyButton}
+                            loading={loadingSubtitles}
+                            displayHelp={(videoPopOut && videoFile?.file?.name) || undefined}
+                            disableKeyEvents={disableKeyEvents}
+                            // On later versions of the extension, VideoPlayer will receive the mining commands instead
+                            disableMiningBinds={extension.supportsVideoPlayerMiningCommands && videoFile !== undefined}
+                            lastJumpToTopTimestamp={lastJumpToTopTimestamp}
+                            hidden={actuallyHideSubtitlePlayer || collapseSubtitleList}
+                            disabledSubtitleTracks={disabledSubtitleTracks}
+                            onSeek={handleSeekToTimestamp}
+                            onCopy={handleCopyFromSubtitlePlayer}
+                            onMouseOver={handleMouseOver}
+                            onMouseOut={handleMouseOut}
+                            onOffsetChange={handleOffsetChange}
+                            onToggleSubtitleTrack={handleToggleSubtitleTrack}
+                            onSubtitlesHighlighted={handleSubtitlesHighlighted}
+                            onResizeStart={handleSubtitlePlayerResizeStart}
+                            onResizeEnd={handleSubtitlePlayerResizeEnd}
+                            maxResizeWidth={subtitlePlayerMaxResizeWidth}
+                            settings={settings}
+                            keyBinder={keyBinder}
+                            webSocketClient={webSocketClient}
+                            initialWidth={subtitlePlayerInitialWidth}
+                        />
+                    </div>
                 </Grid>
                 {settings.llmAnalysisEnabled && !actuallyHideSubtitlePlayer && (
                     <Grid item className={classes.sidePane} style={{ flexShrink: 0 }}>

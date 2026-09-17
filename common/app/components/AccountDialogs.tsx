@@ -14,6 +14,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import FormControl from '@mui/material/FormControl';
 import FormControlLabel from '@mui/material/FormControlLabel';
+import IconButton from '@mui/material/IconButton';
 import InputLabel from '@mui/material/InputLabel';
 import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
@@ -35,7 +36,7 @@ import KeyRoundedIcon from '@mui/icons-material/KeyRounded';
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
-import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
+import BarChartRoundedIcon from '@mui/icons-material/BarChartRounded';
 import TranslateRoundedIcon from '@mui/icons-material/TranslateRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
@@ -64,6 +65,10 @@ type EpisodeAnalysisRecord = ArchiveEpisode & {
     count: number;
     analyses: Record<string, SubtitleAnalysis>;
 };
+
+type ArchiveDeleteTarget =
+    | { kind: 'space'; id: number; name: string; episodeCount: number; analysisCount: number }
+    | { kind: 'episode'; id: number; label: string; spaceId: number; spaceName: string; analysisCount: number };
 
 interface CountedWord {
     surface: string;
@@ -189,6 +194,21 @@ function EpisodeLearningDashboard({ episode }: { episode: EpisodeAnalysisRecord 
     const insights = useMemo(() => buildEpisodeInsights(episode), [episode]);
     const maxWordCount = Math.max(1, ...insights.vocabulary.map((word) => word.count));
     const maxGrammarCount = Math.max(1, ...insights.grammar.map((point) => point.count));
+    const difficultySeries = useMemo(() => {
+        const source = insights.difficulty;
+        const columnCount = Math.min(48, source.length);
+        if (columnCount === 0) return [];
+        return Array.from({ length: columnCount }, (_, index) => {
+            const start = Math.floor((index * source.length) / columnCount);
+            const end = Math.max(start + 1, Math.floor(((index + 1) * source.length) / columnCount));
+            const bucket = source.slice(start, end);
+            const score = bucket.reduce((sum, item) => sum + item.score, 0) / bucket.length;
+            const grammarCount = bucket.reduce((sum, item) => sum + (item.analysis.grammar?.length ?? 0), 0);
+            const range = start === end - 1 ? `第 ${start + 1} 句` : `第 ${start + 1}–${end} 句`;
+            return { score, grammarCount, range, line: bucket[0]?.line ?? '' };
+        });
+    }, [insights.difficulty]);
+    const chartMaxDifficulty = Math.max(1, ...difficultySeries.map((item) => item.score));
 
     return (
         <Stack spacing={2.5}>
@@ -247,9 +267,9 @@ function EpisodeLearningDashboard({ episode }: { episode: EpisodeAnalysisRecord 
                     gap: 2.5,
                 }}
             >
-                <Box>
+                <Box sx={{ minWidth: 0 }}>
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                        <SchoolRoundedIcon color="primary" fontSize="small" />
+                        <BarChartRoundedIcon color="primary" fontSize="small" />
                         <Typography variant="subtitle1">台词难度路线</Typography>
                     </Stack>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -258,31 +278,32 @@ function EpisodeLearningDashboard({ episode }: { episode: EpisodeAnalysisRecord 
                     <Box
                         sx={{
                             height: 150,
-                            display: 'flex',
+                            display: 'grid',
+                            gridTemplateColumns: `repeat(${Math.max(1, difficultySeries.length)}, minmax(0, 1fr))`,
                             alignItems: 'flex-end',
                             gap: '3px',
                             p: 1.25,
                             borderRadius: 2,
                             bgcolor: 'action.hover',
+                            overflow: 'hidden',
                         }}
                     >
-                        {insights.difficulty.map((item, index) => (
+                        {difficultySeries.map((item, index) => (
                             <Tooltip
-                                key={`${item.line}-${index}`}
-                                title={`${index + 1}. ${item.line} · ${item.analysis.grammar?.length ?? 0} 个语法点`}
+                                key={`${item.range}-${index}`}
+                                title={`${item.range} · ${item.grammarCount} 个语法点${difficultySeries.length === insights.difficulty.length ? ` · ${item.line}` : ''}`}
                                 arrow
                             >
                                 <Box
                                     sx={{
-                                        flex: '1 1 4px',
-                                        minWidth: 3,
-                                        maxWidth: 14,
-                                        height: `${Math.max(8, (item.score / insights.maxDifficulty) * 100)}%`,
+                                        width: '100%',
+                                        minWidth: 0,
+                                        height: `${Math.max(8, (item.score / chartMaxDifficulty) * 100)}%`,
                                         borderRadius: '3px 3px 1px 1px',
                                         bgcolor:
-                                            item.score / insights.maxDifficulty > 0.72
+                                            item.score / chartMaxDifficulty > 0.72
                                                 ? 'warning.main'
-                                                : item.score / insights.maxDifficulty > 0.45
+                                                : item.score / chartMaxDifficulty > 0.45
                                                   ? 'primary.main'
                                                   : 'success.main',
                                         opacity: 0.82,
@@ -295,7 +316,7 @@ function EpisodeLearningDashboard({ episode }: { episode: EpisodeAnalysisRecord 
                     </Box>
                 </Box>
 
-                <Box>
+                <Box sx={{ minWidth: 0, overflow: 'hidden' }}>
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                         <TranslateRoundedIcon color="primary" fontSize="small" />
                         <Typography variant="subtitle1">语言构成</Typography>
@@ -928,6 +949,7 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
     const [members, setMembers] = useState<PublicMember[]>([]);
     const [usage, setUsage] = useState<UsageSummary>();
     const [selectedEpisode, setSelectedEpisode] = useState<EpisodeAnalysisRecord>();
+    const [archiveDeleteTarget, setArchiveDeleteTarget] = useState<ArchiveDeleteTarget>();
     const [apiKey, setApiKey] = useState('');
     const [currentPassword, setCurrentPassword] = useState('');
     const [newPassword, setNewPassword] = useState('');
@@ -1060,7 +1082,47 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
         refreshMembers();
     };
 
+    const deleteArchiveTarget = async () => {
+        const target = archiveDeleteTarget;
+        if (!target) return;
+        setSubmitting(true);
+        setError(undefined);
+        try {
+            if (target.kind === 'space') {
+                await accountApi.deleteSpace(target.id);
+                setLibrary((spaces) => spaces.filter((space) => space.id !== target.id));
+                setSelectedEpisode((episode) => (episode?.spaceId === target.id ? undefined : episode));
+                if (account.activeEpisode?.spaceId === target.id) account.setActiveEpisode(undefined);
+                setNotice(`已删除番剧空间“${target.name}”。`);
+            } else {
+                await accountApi.deleteEpisode(target.id);
+                setLibrary((spaces) =>
+                    spaces.map((space) =>
+                        space.id === target.spaceId
+                            ? {
+                                  ...space,
+                                  episodeCount: Math.max(0, space.episodeCount - 1),
+                                  analysisCount: Math.max(0, space.analysisCount - target.analysisCount),
+                                  episodes: space.episodes.filter((episode) => episode.id !== target.id),
+                              }
+                            : space
+                    )
+                );
+                setSelectedEpisode((episode) => (episode?.id === target.id ? undefined : episode));
+                if (account.activeEpisode?.id === target.id) account.setActiveEpisode(undefined);
+                setNotice(`已删除“${target.spaceName}”第 ${target.label} 集。`);
+            }
+            setArchiveDeleteTarget(undefined);
+            refreshMembers();
+        } catch (reason) {
+            setError(message(reason));
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
     return (
+        <>
         <Dialog open={open} onClose={onClose} fullWidth maxWidth="lg">
             <DialogTitle>
                 <Stack
@@ -1079,7 +1141,7 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
                             />
                         </Stack>
                         <Typography variant="body2" color="text.secondary">
-                            {account.user.username} · 管理番剧空间、调用记录与账户安全
+                            {account.user.username} · 管理番剧空间、API 调用与账户安全
                         </Typography>
                     </Box>
                     <Button startIcon={<LogoutIcon />} color="inherit" onClick={() => void account.logout()}>
@@ -1096,7 +1158,8 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
             >
                 <Tab value="spaces" icon={<VideoLibraryRoundedIcon />} iconPosition="start" label="我的番剧" />
                 <Tab value="members" icon={<GroupsRoundedIcon />} iconPosition="start" label="成员空间" />
-                <Tab value="security" icon={<SecurityRoundedIcon />} iconPosition="start" label="API 与安全" />
+                <Tab value="api" icon={<KeyRoundedIcon />} iconPosition="start" label="API 调用" />
+                <Tab value="password" icon={<SecurityRoundedIcon />} iconPosition="start" label="修改密码" />
                 {account.user.role === 'admin' && (
                     <Tab value="users" icon={<ManageAccountsRoundedIcon />} iconPosition="start" label="用户管理" />
                 )}
@@ -1155,6 +1218,27 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
                                             {space.episodeCount} 集 · {space.analysisCount} 条分析
                                         </Typography>
                                     </Box>
+                                    <Tooltip title="删除番剧空间" arrow>
+                                        <IconButton
+                                            size="small"
+                                            color="error"
+                                            aria-label={`删除番剧空间 ${space.name}`}
+                                            onClick={(event) => {
+                                                event.stopPropagation();
+                                                setArchiveDeleteTarget({
+                                                    kind: 'space',
+                                                    id: space.id,
+                                                    name: space.name,
+                                                    episodeCount: space.episodeCount,
+                                                    analysisCount: space.analysisCount,
+                                                });
+                                            }}
+                                            onFocus={(event) => event.stopPropagation()}
+                                            sx={{ mr: 1 }}
+                                        >
+                                            <DeleteOutlineRoundedIcon fontSize="small" />
+                                        </IconButton>
+                                    </Tooltip>
                                 </AccordionSummary>
                                 <AccordionDetails>
                                     <List dense disablePadding>
@@ -1162,17 +1246,39 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
                                             <ListItem
                                                 key={episode.id}
                                                 secondaryAction={
-                                                    <Button
-                                                        onClick={() =>
-                                                            accountApi
-                                                                .episode(episode.id)
-                                                                .then(setSelectedEpisode)
-                                                                .catch((reason) => setError(message(reason)))
-                                                        }
-                                                    >
-                                                        查看学习分析
-                                                    </Button>
+                                                    <Stack direction="row" spacing={0.5} alignItems="center">
+                                                        <Button
+                                                            onClick={() =>
+                                                                accountApi
+                                                                    .episode(episode.id)
+                                                                    .then(setSelectedEpisode)
+                                                                    .catch((reason) => setError(message(reason)))
+                                                            }
+                                                        >
+                                                            查看学习分析
+                                                        </Button>
+                                                        <Tooltip title="删除这一集" arrow>
+                                                            <IconButton
+                                                                size="small"
+                                                                color="error"
+                                                                aria-label={`删除第 ${episode.label} 集`}
+                                                                onClick={() =>
+                                                                    setArchiveDeleteTarget({
+                                                                        kind: 'episode',
+                                                                        id: episode.id,
+                                                                        label: episode.label,
+                                                                        spaceId: space.id,
+                                                                        spaceName: space.name,
+                                                                        analysisCount: episode.analysisCount ?? 0,
+                                                                    })
+                                                                }
+                                                            >
+                                                                <DeleteOutlineRoundedIcon fontSize="small" />
+                                                            </IconButton>
+                                                        </Tooltip>
+                                                    </Stack>
                                                 }
+                                                sx={{ pr: 20 }}
                                             >
                                                 <ListItemText
                                                     primary={`第 ${episode.label} 集`}
@@ -1193,7 +1299,7 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
                     </Stack>
                 )}
                 {tab === 'members' && <MemberDirectory members={members} />}
-                {tab === 'security' && (
+                {tab === 'api' && (
                     <Stack spacing={3}>
                         {usage && (
                             <Box>
@@ -1216,91 +1322,108 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
                                 />
                             </Box>
                         )}
-                        <Box
-                            sx={{
-                                display: 'grid',
-                                gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
-                                gap: 3,
-                            }}
-                        >
-                            <Stack spacing={1.5}>
-                                <Stack direction="row" spacing={1} alignItems="center">
-                                    <KeyRoundedIcon color="primary" />
+                        <Stack spacing={1.5} sx={{ maxWidth: 680 }}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                                <KeyRoundedIcon color="primary" />
+                                <Box>
                                     <Typography variant="h6">LLM API Key</Typography>
-                                </Stack>
-                                <Alert severity={account.user.hasApiKey ? 'success' : 'warning'}>
-                                    {account.user.hasApiKey
-                                        ? '已配置。密钥经过加密保存，前端无法读取原文。'
-                                        : '尚未配置。缓存未命中时无法生成新分析。'}
-                                </Alert>
-                                <TextField
-                                    label="新的 LLM API Key"
-                                    type="password"
-                                    value={apiKey}
-                                    onChange={(event) => setApiKey(event.target.value)}
-                                    autoComplete="off"
-                                />
-                                <Stack direction="row" spacing={1}>
-                                    <Button
-                                        variant="contained"
-                                        disabled={submitting || apiKey.trim().length < 8}
-                                        onClick={() => void saveApiKey()}
-                                    >
-                                        加密保存
-                                    </Button>
-                                    {account.user.hasApiKey && (
-                                        <Button
-                                            color="error"
-                                            onClick={() =>
-                                                accountApi
-                                                    .removeApiKey()
-                                                    .then(account.refreshUser)
-                                                    .then(() => setNotice('API Key 已删除。'))
-                                                    .catch((reason) => setError(message(reason)))
-                                            }
-                                        >
-                                            删除 Key
-                                        </Button>
-                                    )}
-                                </Stack>
+                                    <Typography variant="body2" color="text.secondary">
+                                        此密钥仅用于缓存未命中的字幕分析请求。
+                                    </Typography>
+                                </Box>
                             </Stack>
-                            <Stack spacing={1.5}>
-                                <Typography variant="h6">修改密码</Typography>
-                                <TextField
-                                    label="当前密码"
-                                    type="password"
-                                    value={currentPassword}
-                                    onChange={(event) => setCurrentPassword(event.target.value)}
-                                    autoComplete="current-password"
-                                />
-                                <TextField
-                                    label="新密码"
-                                    type="password"
-                                    value={newPassword}
-                                    onChange={(event) => setNewPassword(event.target.value)}
-                                    autoComplete="new-password"
-                                    helperText="至少 10 位"
-                                />
-                                <TextField
-                                    label="确认新密码"
-                                    type="password"
-                                    value={confirmPassword}
-                                    onChange={(event) => setConfirmPassword(event.target.value)}
-                                    autoComplete="new-password"
-                                />
+                            <Alert severity={account.user.hasApiKey ? 'success' : 'warning'}>
+                                {account.user.hasApiKey
+                                    ? '已配置。密钥经过加密保存，前端无法读取原文。'
+                                    : '尚未配置。缓存未命中时无法生成新分析。'}
+                            </Alert>
+                            <TextField
+                                label="新的 LLM API Key"
+                                type="password"
+                                value={apiKey}
+                                onChange={(event) => setApiKey(event.target.value)}
+                                autoComplete="off"
+                            />
+                            <Stack direction="row" spacing={1}>
                                 <Button
                                     variant="contained"
-                                    disabled={
-                                        submitting ||
-                                        !currentPassword ||
-                                        newPassword.length < 10 ||
-                                        confirmPassword.length < 10
-                                    }
-                                    onClick={() => void changePassword()}
+                                    disabled={submitting || apiKey.trim().length < 8}
+                                    onClick={() => void saveApiKey()}
                                 >
-                                    修改密码
+                                    加密保存
                                 </Button>
+                                {account.user.hasApiKey && (
+                                    <Button
+                                        color="error"
+                                        onClick={() =>
+                                            accountApi
+                                                .removeApiKey()
+                                                .then(account.refreshUser)
+                                                .then(() => setNotice('API Key 已删除。'))
+                                                .catch((reason) => setError(message(reason)))
+                                        }
+                                    >
+                                        删除 Key
+                                    </Button>
+                                )}
                             </Stack>
+                        </Stack>
+                    </Stack>
+                )}
+                {tab === 'password' && (
+                    <Stack spacing={2.5} sx={{ maxWidth: 560 }}>
+                        <Box>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                                <SecurityRoundedIcon color="primary" />
+                                <Typography variant="h6">修改登录密码</Typography>
+                            </Stack>
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                                修改后，其他设备上的登录会话会立即失效，当前设备保持登录。
+                            </Typography>
+                        </Box>
+                        <TextField
+                            label="当前密码"
+                            type="password"
+                            value={currentPassword}
+                            onChange={(event) => setCurrentPassword(event.target.value)}
+                            autoComplete="current-password"
+                            fullWidth
+                        />
+                        <TextField
+                            label="新密码"
+                            type="password"
+                            value={newPassword}
+                            onChange={(event) => setNewPassword(event.target.value)}
+                            autoComplete="new-password"
+                            helperText="至少 10 位"
+                            fullWidth
+                        />
+                        <TextField
+                            label="确认新密码"
+                            type="password"
+                            value={confirmPassword}
+                            onChange={(event) => setConfirmPassword(event.target.value)}
+                            autoComplete="new-password"
+                            error={Boolean(confirmPassword && newPassword !== confirmPassword)}
+                            helperText={
+                                confirmPassword && newPassword !== confirmPassword ? '两次输入的密码不一致' : ' '
+                            }
+                            fullWidth
+                        />
+                        <Box>
+                            <Button
+                                variant="contained"
+                                disabled={
+                                    submitting ||
+                                    !currentPassword ||
+                                    newPassword.length < 10 ||
+                                    confirmPassword.length < 10 ||
+                                    newPassword !== confirmPassword
+                                }
+                                onClick={() => void changePassword()}
+                            >
+                                保存新密码
+                            </Button>
                         </Box>
                     </Stack>
                 )}
@@ -1448,5 +1571,43 @@ export function AccountCenterDialog({ open, onClose }: { open: boolean; onClose:
                 <Button onClick={onClose}>关闭</Button>
             </DialogActions>
         </Dialog>
+        <Dialog
+            open={archiveDeleteTarget !== undefined}
+            onClose={submitting ? undefined : () => setArchiveDeleteTarget(undefined)}
+            fullWidth
+            maxWidth="xs"
+        >
+            <DialogTitle>
+                {archiveDeleteTarget?.kind === 'space' ? '删除番剧空间？' : '删除这一集？'}
+            </DialogTitle>
+            <DialogContent>
+                {archiveDeleteTarget?.kind === 'space' ? (
+                    <Typography>
+                        “{archiveDeleteTarget.name}”包含 {archiveDeleteTarget.episodeCount} 集、
+                        {archiveDeleteTarget.analysisCount} 条学习分析。删除后无法恢复。
+                    </Typography>
+                ) : archiveDeleteTarget ? (
+                    <Typography>
+                        将删除“{archiveDeleteTarget.spaceName}”第 {archiveDeleteTarget.label} 集及其
+                        {archiveDeleteTarget.analysisCount} 条学习分析。删除后无法恢复。
+                    </Typography>
+                ) : null}
+            </DialogContent>
+            <DialogActions>
+                <Button disabled={submitting} onClick={() => setArchiveDeleteTarget(undefined)}>
+                    取消
+                </Button>
+                <Button
+                    color="error"
+                    variant="contained"
+                    disabled={submitting}
+                    startIcon={<DeleteOutlineRoundedIcon />}
+                    onClick={() => void deleteArchiveTarget()}
+                >
+                    {submitting ? '删除中…' : '确认删除'}
+                </Button>
+            </DialogActions>
+        </Dialog>
+        </>
     );
 }

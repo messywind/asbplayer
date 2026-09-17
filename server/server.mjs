@@ -478,12 +478,24 @@ async function handleApi(req, res, url, route) {
         }
         return true;
     }
+    const spaceMatch = url.pathname.match(/^\/api\/spaces\/(\d+)$/);
+    if (req.method === 'DELETE' && spaceMatch) {
+        if (!database.deleteSpace(user.id, Number(spaceMatch[1]))) throw new HttpError(404, '未找到该番剧空间');
+        sendJson(res, 200, { ok: true });
+        return true;
+    }
     if (route === 'POST /api/episodes') {
         const body = await jsonBody(req);
         const label = String(body.label ?? '').trim();
         if (!label || label.length > 80) throw new HttpError(400, '集数名称需要为 1–80 个字符');
         const episode = database.createOrUpdateEpisode(user.id, Number(body.spaceId), label, body.mediaFileName);
         sendJson(res, 200, { episode });
+        return true;
+    }
+    const episodeMatch = url.pathname.match(/^\/api\/episodes\/(\d+)$/);
+    if (req.method === 'DELETE' && episodeMatch) {
+        if (!database.deleteEpisode(user.id, Number(episodeMatch[1]))) throw new HttpError(404, '未找到该集');
+        sendJson(res, 200, { ok: true });
         return true;
     }
     if (route === 'GET /api/library') {

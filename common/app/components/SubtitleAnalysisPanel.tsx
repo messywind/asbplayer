@@ -343,6 +343,40 @@ function speakBrowser(text: string): void {
     }
 }
 
+async function writeClipboardText(text: string): Promise<boolean> {
+    if (!text) return false;
+    try {
+        if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+        }
+    } catch {
+        // Some browser/iframe permission policies reject Clipboard API writes.
+        // Fall back to the selection-based copy path below.
+    }
+
+    const textarea = document.createElement('textarea');
+    const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.inset = '0 auto auto -9999px';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    textarea.setSelectionRange(0, text.length);
+    let copied = false;
+    try {
+        copied = document.execCommand('copy');
+    } catch {
+        copied = false;
+    } finally {
+        textarea.remove();
+        activeElement?.focus();
+    }
+    return copied;
+}
+
 /** A single word: romaji + furigana above the surface, click to hear it, gloss below. */
 const TokenChip: React.FC<{
     index: number;
@@ -354,7 +388,7 @@ const TokenChip: React.FC<{
     active: boolean;
     copied: boolean;
     onSpeak: (text: string) => void;
-    onHoverStart: (index: number, text: string) => void;
+    onHoverStart: (index: number) => void;
     onHoverEnd: () => void;
     onCopy: (index: number, text: string) => void;
 }> = ({
@@ -380,7 +414,7 @@ const TokenChip: React.FC<{
             <Box
                 role="group"
                 aria-label={`${surface}，${tooltip}`}
-                onMouseEnter={() => onHoverStart(index, spoken)}
+                onMouseEnter={() => onHoverStart(index)}
                 onMouseLeave={onHoverEnd}
                 sx={{
                     display: 'inline-flex',
@@ -528,7 +562,6 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
     // L1 cache: analyses keyed by source line, so re-showing a subtitle is instant / free.
     const cacheRef = useRef<Map<string, SubtitleAnalysis>>(new Map());
     const batchAbortRef = useRef<AbortController | undefined>(undefined);
-    const hoverSpeakTimerRef = useRef<number | undefined>(undefined);
     const resizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
 
     const backendUrl = account ? window.location.origin : (settings.llmBackendUrl?.trim() ?? '');
@@ -575,24 +608,18 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
         [usingBackend, backendOnline, backendUrl]
     );
 
-    const handleTokenHoverStart = useCallback(
-        (index: number, text: string) => {
-            window.clearTimeout(hoverSpeakTimerRef.current);
-            setActiveTokenIndex(index);
-            hoverSpeakTimerRef.current = window.setTimeout(() => speakWord(text), 180);
-        },
-        [speakWord]
-    );
+    const handleTokenHoverStart = useCallback((index: number) => setActiveTokenIndex(index), []);
 
     const handleTokenHoverEnd = useCallback(() => {
-        window.clearTimeout(hoverSpeakTimerRef.current);
         setActiveTokenIndex(undefined);
     }, []);
 
-    useEffect(() => () => window.clearTimeout(hoverSpeakTimerRef.current), []);
-
-    const copyToken = useCallback((index: number, text: string) => {
-        void navigator.clipboard?.writeText(text);
+    const copyToken = useCallback(async (index: number, text: string) => {
+        const copied = await writeClipboardText(text);
+        if (!copied) {
+            setError('复制失败，请选中文字后手动复制。');
+            return;
+        }
         setCopiedTokenIndex(index);
         window.setTimeout(() => setCopiedTokenIndex((current) => (current === index ? undefined : current)), 1200);
     }, []);
@@ -781,11 +808,15 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
 
     useEffect(() => () => batchAbortRef.current?.abort(), []);
 
-    const copyTranslation = useCallback(() => {
+    const copyTranslation = useCallback(async () => {
         if (!analysis?.translation) {
             return;
         }
-        void navigator.clipboard?.writeText(analysis.translation);
+        const didCopy = await writeClipboardText(analysis.translation);
+        if (!didCopy) {
+            setError('复制失败，请选中文字后手动复制。');
+            return;
+        }
         setCopied(true);
         setTimeout(() => setCopied(false), 1200);
     }, [analysis]);
@@ -989,7 +1020,11 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                                                 title={copied ? t('llmAnalysis.copied') : t('llmAnalysis.copy')}
                                                 arrow
                                             >
-                                                <IconButton size="small" onClick={copyTranslation} sx={{ p: 0.25 }}>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => void copyTranslation()}
+                                                    sx={{ p: 0.25 }}
+                                                >
                                                     {copied ? (
                                                         <CheckIcon sx={{ fontSize: '0.9rem' }} color="success" />
                                                     ) : (
@@ -1020,7 +1055,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                                                 <Box
                                                     key={`${tokenReading}-${index}`}
                                                     component="span"
-                                                    onMouseEnter={() => handleTokenHoverStart(index, tokenReading)}
+                                                    onMouseEnter={() => handleTokenHoverStart(index)}
                                                     onMouseLeave={handleTokenHoverEnd}
                                                     sx={{
                                                         display: 'inline-flex',
@@ -1055,7 +1090,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                                         color="text.disabled"
                                         sx={{ display: 'block', mt: 0.35 }}
                                     >
-                                        悬停读音或词卡即可朗读并同步高亮
+                                        悬停读音或词卡可同步高亮，点击喇叭播放读音
                                     </Typography>
                                 </Box>
                             )}

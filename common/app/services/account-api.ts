@@ -126,11 +126,15 @@ export const accountApi = {
     spaces: () => request<{ spaces: AnimeSpace[] }>('/api/spaces'),
     createSpace: (name: string) =>
         request<{ space: AnimeSpace }>('/api/spaces', { method: 'POST', body: JSON.stringify({ name }) }),
+    deleteSpace: (spaceId: number) =>
+        request<{ ok: boolean }>(`/api/spaces/${encodeURIComponent(spaceId)}`, { method: 'DELETE' }),
     createEpisode: (spaceId: number, label: string, mediaFileName?: string) =>
         request<{ episode: ArchiveEpisode }>('/api/episodes', {
             method: 'POST',
             body: JSON.stringify({ spaceId, label, mediaFileName }),
         }),
+    deleteEpisode: (episodeId: number) =>
+        request<{ ok: boolean }>(`/api/episodes/${encodeURIComponent(episodeId)}`, { method: 'DELETE' }),
     library: () => request<{ spaces: AnimeSpaceWithEpisodes[] }>('/api/library'),
     episode: (episodeId: number) =>
         request<ArchiveEpisode & { count: number; analyses: Record<string, SubtitleAnalysis> }>(

@@ -224,6 +224,13 @@ export class MultiUserDatabase {
         return this.getSpace(userId, result.lastInsertRowid);
     }
 
+    deleteSpace(userId, spaceId) {
+        const result = this.db
+            .prepare('DELETE FROM anime_spaces WHERE id = ? AND user_id = ?')
+            .run(Number(spaceId), Number(userId));
+        return Number(result.changes) > 0;
+    }
+
     getSpace(userId, id) {
         return this.db
             .prepare(
@@ -343,6 +350,17 @@ export class MultiUserDatabase {
                  WHERE e.space_id = ? AND e.label = ? COLLATE NOCASE AND s.user_id = ?`
             )
             .get(Number(spaceId), String(label).trim(), Number(userId));
+    }
+
+    deleteEpisode(userId, episodeId) {
+        const episode = this.episodeOwnedBy(userId, episodeId);
+        if (!episode) return false;
+        const result = this.db.prepare('DELETE FROM episodes WHERE id = ?').run(Number(episodeId));
+        if (Number(result.changes) > 0) {
+            this.db.prepare('UPDATE anime_spaces SET updated_at = ? WHERE id = ?').run(now(), Number(episode.spaceId));
+            return true;
+        }
+        return false;
     }
 
     episodeOwnedBy(userId, episodeId) {
