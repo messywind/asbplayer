@@ -1673,7 +1673,7 @@ function PlayerComponent(
                     />
                 </Grid>
                 {settings.llmAnalysisEnabled && !actuallyHideSubtitlePlayer && (
-                    <Grid item className={classes.sidePane}>
+                    <Grid item className={classes.sidePane} style={{ flexShrink: 0 }}>
                         <SubtitleAnalysisPanel
                             settings={settings}
                             showingSubtitles={showingSubtitlesForAnalysis}

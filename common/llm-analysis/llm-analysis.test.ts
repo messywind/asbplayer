@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, jest } from '@jest/globals';
 import {
     analyzeSubtitle,
+    analyzeSubtitles,
     chatCompletionsUrl,
     coerceAnalysis,
     extractJsonObject,
@@ -165,5 +166,55 @@ describe('analyzeSubtitle (mocked fetch)', () => {
 
     it('rejects when apiKey is missing', async () => {
         await expect(analyzeSubtitle('こんにちは', { ...config, apiKey: '' })).rejects.toThrow(LlmAnalysisError);
+    });
+});
+
+describe('analyzeSubtitles (mocked fetch)', () => {
+    const config: LlmConfig = {
+        apiKey: 'test-key',
+        baseUrl: 'https://api.example.com/v1',
+        model: 'test-model',
+    };
+    const originalFetch = globalThis.fetch;
+
+    afterEach(() => {
+        globalThis.fetch = originalFetch;
+    });
+
+    it('analyzes multiple lines with one API request and preserves order', async () => {
+        const content = JSON.stringify({
+            results: [
+                { id: '0', translation: '你好。', tokens: [], grammar: [] },
+                { id: '1', translation: '晚安。', tokens: [], grammar: [] },
+            ],
+        });
+        const fetchMock = jest.fn<typeof fetch>().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ choices: [{ message: { content } }] }),
+            text: async () => content,
+        } as unknown as Response);
+        globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+        const analyses = await analyzeSubtitles(['こんにちは', 'おやすみ'], config);
+
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(analyses.map((analysis) => analysis.original)).toEqual(['こんにちは', 'おやすみ']);
+        expect(analyses.map((analysis) => analysis.translation)).toEqual(['你好。', '晚安。']);
+        const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+        const sentBody = JSON.parse(init.body as string);
+        expect(JSON.parse(sentBody.messages[1].content)).toHaveLength(2);
+    });
+
+    it('rejects an incomplete batch response', async () => {
+        const content = JSON.stringify({ results: [{ id: '0', translation: '你好。' }] });
+        globalThis.fetch = jest.fn<typeof fetch>().mockResolvedValue({
+            ok: true,
+            status: 200,
+            json: async () => ({ choices: [{ message: { content } }] }),
+            text: async () => content,
+        } as unknown as Response) as unknown as typeof fetch;
+
+        await expect(analyzeSubtitles(['こんにちは', 'おやすみ'], config)).rejects.toThrow(LlmAnalysisError);
     });
 });

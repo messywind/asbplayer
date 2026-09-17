@@ -7,12 +7,10 @@ import Chip from '@mui/material/Chip';
 import Divider from '@mui/material/Divider';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
-import CircularProgress from '@mui/material/CircularProgress';
 import LinearProgress from '@mui/material/LinearProgress';
 import Alert from '@mui/material/Alert';
 import Tooltip from '@mui/material/Tooltip';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import RefreshIcon from '@mui/icons-material/Refresh';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import CheckIcon from '@mui/icons-material/Check';
 import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
@@ -24,8 +22,8 @@ import { useTranslation } from 'react-i18next';
 import type { SubtitleModel } from '@project/common';
 import type { AsbplayerSettings } from '@project/common/settings';
 import {
-    analyzeSubtitle,
-    analyzeViaBackend,
+    analyzeSubtitles,
+    analyzeBatchViaBackend,
     fetchEpisodeAnalyses,
     backendTtsUrl,
     parseAnimeEpisode,
@@ -113,6 +111,21 @@ interface BatchProgress {
 }
 
 const emptyBatch: BatchProgress = { running: false, total: 0, done: 0, analyzed: 0, cached: 0, failed: 0 };
+
+function clampAnalysisPanelWidth(value: number): number {
+    const viewportLimit = typeof window === 'undefined' ? 720 : Math.max(340, Math.min(720, window.innerWidth * 0.58));
+    return Math.round(Math.min(viewportLimit, Math.max(340, value)));
+}
+const LLM_BATCH_SIZE = 8;
+const LLM_BATCH_CONCURRENCY = 2;
+
+function chunksOf<T>(items: T[], size: number): T[][] {
+    const chunks: T[][] = [];
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size));
+    }
+    return chunks;
+}
 
 // --- Kana → romaji (Hepburn) --------------------------------------------------
 // Display-only romanization of the token reading. Handles hiragana + katakana,
@@ -332,86 +345,141 @@ function speakBrowser(text: string): void {
 
 /** A single word: romaji + furigana above the surface, click to hear it, gloss below. */
 const TokenChip: React.FC<{
+    index: number;
     surface: string;
     reading: string;
     gloss: string;
     pos: string;
     inflection?: string;
+    active: boolean;
+    copied: boolean;
     onSpeak: (text: string) => void;
-}> = ({ surface, reading, gloss, pos, inflection, onSpeak }) => {
+    onHoverStart: (index: number, text: string) => void;
+    onHoverEnd: () => void;
+    onCopy: (index: number, text: string) => void;
+}> = ({
+    index,
+    surface,
+    reading,
+    gloss,
+    pos,
+    inflection,
+    active,
+    copied,
+    onSpeak,
+    onHoverStart,
+    onHoverEnd,
+    onCopy,
+}) => {
     const showReading = Boolean(reading && reading !== surface);
     const romaji = kanaToRomaji(reading || surface);
     const spoken = reading || surface;
     const tooltip = [pos, gloss, inflection].filter(Boolean).join(' · ') || surface;
     return (
-        <Tooltip title={tooltip} arrow disableInteractive>
+        <Tooltip title={tooltip} arrow enterDelay={500}>
             <Box
-                component="button"
-                type="button"
-                onClick={() => onSpeak(spoken)}
+                role="group"
+                aria-label={`${surface}，${tooltip}`}
+                onMouseEnter={() => onHoverStart(index, spoken)}
+                onMouseLeave={onHoverEnd}
                 sx={{
                     display: 'inline-flex',
                     flexDirection: 'column',
                     alignItems: 'center',
                     textAlign: 'center',
-                    minWidth: 40,
-                    maxWidth: 104,
-                    px: 0.75,
-                    py: 0.4,
-                    m: 0.3,
-                    borderRadius: 1.5,
+                    position: 'relative',
+                    minWidth: 74,
+                    maxWidth: 156,
+                    px: 1.1,
+                    pt: 0.9,
+                    pb: 0.65,
+                    m: 0.4,
+                    borderRadius: 2,
                     border: 1,
-                    borderColor: 'divider',
-                    bgcolor: 'action.hover',
-                    cursor: 'pointer',
-                    font: 'inherit',
+                    borderColor: active ? 'primary.main' : 'divider',
+                    bgcolor: active ? 'action.selected' : 'action.hover',
                     color: 'inherit',
                     lineHeight: 1.2,
-                    transition: 'background-color 120ms, border-color 120ms',
-                    '&:hover': { bgcolor: 'action.selected', borderColor: 'primary.main' },
-                    '&:hover .tokenSpeaker': { opacity: 0.9 },
+                    transition: 'background-color 180ms ease, border-color 180ms ease, transform 180ms ease',
+                    transform: active ? 'translateY(-1px)' : 'none',
+                    '&:hover .tokenActions, &:focus-within .tokenActions': { opacity: 1 },
                 }}
             >
                 {romaji && (
                     <Typography
                         component="span"
-                        sx={{ fontSize: '0.55rem', color: 'text.disabled', letterSpacing: '0.02em' }}
+                        sx={{
+                            fontSize: '0.68rem',
+                            color: 'text.secondary',
+                            letterSpacing: '0.02em',
+                            userSelect: 'text',
+                        }}
                     >
                         {romaji}
                     </Typography>
                 )}
                 <Typography
                     component="span"
-                    sx={{ fontSize: '0.62rem', color: 'primary.main', minHeight: showReading ? '0.8rem' : 0 }}
+                    sx={{
+                        fontSize: '0.78rem',
+                        color: 'primary.main',
+                        minHeight: showReading ? '1rem' : 0,
+                        userSelect: 'text',
+                    }}
                 >
                     {showReading ? reading : ''}
                 </Typography>
-                <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.25 }}>
-                    <Typography component="span" sx={{ fontSize: '1.05rem', fontWeight: 500 }}>
-                        {surface}
-                    </Typography>
-                    <VolumeUpIcon
-                        className="tokenSpeaker"
-                        sx={{ fontSize: '0.72rem', color: 'text.secondary', opacity: 0.35 }}
-                    />
-                </Box>
+                <Typography
+                    component="span"
+                    sx={{ fontSize: '1.28rem', fontWeight: 650, lineHeight: 1.35, userSelect: 'text', cursor: 'text' }}
+                >
+                    {surface}
+                </Typography>
                 {gloss && (
                     <Typography
                         component="span"
                         sx={{
-                            fontSize: '0.68rem',
+                            fontSize: '0.78rem',
                             color: 'text.secondary',
-                            mt: 0.15,
+                            mt: 0.3,
                             display: '-webkit-box',
                             WebkitLineClamp: 2,
                             WebkitBoxOrient: 'vertical',
                             overflow: 'hidden',
                             wordBreak: 'break-word',
+                            userSelect: 'text',
                         }}
                     >
                         {gloss}
                     </Typography>
                 )}
+                <Stack
+                    className="tokenActions"
+                    direction="row"
+                    spacing={0.25}
+                    sx={{ mt: 0.45, opacity: active ? 1 : 0.45, transition: 'opacity 160ms ease' }}
+                >
+                    <IconButton
+                        size="small"
+                        aria-label={`朗读 ${surface}`}
+                        onClick={() => onSpeak(spoken)}
+                        sx={{ p: 0.35 }}
+                    >
+                        <VolumeUpIcon sx={{ fontSize: '0.9rem' }} />
+                    </IconButton>
+                    <IconButton
+                        size="small"
+                        aria-label={`复制 ${surface}`}
+                        onClick={() => onCopy(index, surface)}
+                        sx={{ p: 0.35 }}
+                    >
+                        {copied ? (
+                            <CheckIcon sx={{ fontSize: '0.9rem' }} color="success" />
+                        ) : (
+                            <ContentCopyIcon sx={{ fontSize: '0.82rem' }} />
+                        )}
+                    </IconButton>
+                </Stack>
             </Box>
         </Tooltip>
     );
@@ -436,7 +504,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
     mediaFileName,
     lineAudioAvailable,
     onPlayLineAudio,
-    width = 360,
+    width = 440,
 }) => {
     const { t } = useTranslation();
     const account = useAccount();
@@ -445,16 +513,23 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
 
     const [analysis, setAnalysis] = useState<SubtitleAnalysis | undefined>(undefined);
     const [fromCache, setFromCache] = useState(false);
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | undefined>(undefined);
     const [copied, setCopied] = useState(false);
     const [batch, setBatch] = useState<BatchProgress>(emptyBatch);
     const [backendOnline, setBackendOnline] = useState<boolean | undefined>(undefined);
+    const [activeTokenIndex, setActiveTokenIndex] = useState<number>();
+    const [copiedTokenIndex, setCopiedTokenIndex] = useState<number>();
+    const [panelWidth, setPanelWidth] = useState(() => {
+        if (typeof window === 'undefined') return width;
+        const saved = Number(window.localStorage.getItem('asbplayer.llmAnalysisPanelWidth'));
+        return clampAnalysisPanelWidth(Number.isFinite(saved) && saved >= 340 ? saved : width);
+    });
 
     // L1 cache: analyses keyed by source line, so re-showing a subtitle is instant / free.
     const cacheRef = useRef<Map<string, SubtitleAnalysis>>(new Map());
-    const abortRef = useRef<AbortController | undefined>(undefined);
     const batchAbortRef = useRef<AbortController | undefined>(undefined);
+    const hoverSpeakTimerRef = useRef<number | undefined>(undefined);
+    const resizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
 
     const backendUrl = account ? window.location.origin : (settings.llmBackendUrl?.trim() ?? '');
     const usingBackend = backendUrl.length > 0;
@@ -499,6 +574,75 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
         },
         [usingBackend, backendOnline, backendUrl]
     );
+
+    const handleTokenHoverStart = useCallback(
+        (index: number, text: string) => {
+            window.clearTimeout(hoverSpeakTimerRef.current);
+            setActiveTokenIndex(index);
+            hoverSpeakTimerRef.current = window.setTimeout(() => speakWord(text), 180);
+        },
+        [speakWord]
+    );
+
+    const handleTokenHoverEnd = useCallback(() => {
+        window.clearTimeout(hoverSpeakTimerRef.current);
+        setActiveTokenIndex(undefined);
+    }, []);
+
+    useEffect(() => () => window.clearTimeout(hoverSpeakTimerRef.current), []);
+
+    const copyToken = useCallback((index: number, text: string) => {
+        void navigator.clipboard?.writeText(text);
+        setCopiedTokenIndex(index);
+        window.setTimeout(() => setCopiedTokenIndex((current) => (current === index ? undefined : current)), 1200);
+    }, []);
+
+    const clampPanelWidth = useCallback((value: number) => {
+        return clampAnalysisPanelWidth(value);
+    }, []);
+
+    const beginResize = useCallback(
+        (event: React.PointerEvent) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            resizeRef.current = { startX: event.clientX, startWidth: panelWidth };
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        },
+        [panelWidth]
+    );
+
+    useEffect(() => {
+        const move = (event: PointerEvent) => {
+            if (!resizeRef.current) return;
+            const next = clampPanelWidth(resizeRef.current.startWidth + resizeRef.current.startX - event.clientX);
+            setPanelWidth(next);
+        };
+        const end = () => {
+            if (!resizeRef.current) return;
+            resizeRef.current = undefined;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            setPanelWidth((current) => {
+                window.localStorage.setItem('asbplayer.llmAnalysisPanelWidth', String(current));
+                return current;
+            });
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', end);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', end);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+    }, [clampPanelWidth]);
+
+    useEffect(() => {
+        const fitToViewport = () => setPanelWidth((current) => clampPanelWidth(current));
+        window.addEventListener('resize', fitToViewport);
+        return () => window.removeEventListener('resize', fitToViewport);
+    }, [clampPanelWidth]);
 
     // Play the whole line: use the original anime audio when a video is loaded
     // (most natural), otherwise fall back to a synthesized voice.
@@ -556,91 +700,30 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
         return () => controller.abort();
     }, [usingBackend, backendUrl, anime, episode, account?.activeEpisode?.id]);
 
-    // Single source of truth for "analyze one line", routed via backend or direct API.
-    const resolveAnalysis = useCallback(
-        async (
-            text: string,
-            force: boolean,
-            signal: AbortSignal
-        ): Promise<{ analysis: SubtitleAnalysis; cached: boolean }> => {
+    const resolveBatch = useCallback(
+        async (lines: string[], signal: AbortSignal) => {
             if (usingBackend) {
-                const r = await analyzeViaBackend(backendUrl, text, {
-                    force,
+                return await analyzeBatchViaBackend(backendUrl, lines, {
                     signal,
                     anime,
                     episode,
                     episodeId: account?.activeEpisode?.id,
                 });
-                return { analysis: r.analysis, cached: r.cached };
             }
-            const result = await analyzeSubtitle(text, configFromSettings(settings), { signal });
-            return { analysis: result, cached: false };
+            const analyses = await analyzeSubtitles(lines, configFromSettings(settings), { signal });
+            return analyses.map((analysis, index) => ({ line: lines[index], analysis, cached: false }));
         },
         [usingBackend, backendUrl, anime, episode, settings, account?.activeEpisode?.id]
     );
 
-    const runAnalysis = useCallback(
-        async (text: string, force = false) => {
-            if (!text) {
-                setAnalysis(undefined);
-                setError(undefined);
-                return;
-            }
-            if (!configured) {
-                setError(t('llmAnalysis.notConfigured') ?? 'API not configured');
-                return;
-            }
-            const cached = cacheRef.current.get(text);
-            if (cached && !force) {
-                setAnalysis(cached);
-                setFromCache(true);
-                setError(undefined);
-                setLoading(false);
-                return;
-            }
-            abortRef.current?.abort();
-            const controller = new AbortController();
-            abortRef.current = controller;
-            setLoading(true);
-            setError(undefined);
-            try {
-                const { analysis: result, cached: wasCached } = await resolveAnalysis(text, force, controller.signal);
-                cacheRef.current.set(text, result);
-                if (!controller.signal.aborted) {
-                    setAnalysis(result);
-                    setFromCache(wasCached);
-                }
-            } catch (e) {
-                if (controller.signal.aborted) {
-                    return;
-                }
-                setError(e instanceof LlmAnalysisError ? e.message : String(e));
-            } finally {
-                if (abortRef.current === controller) {
-                    setLoading(false);
-                }
-            }
-        },
-        [configured, resolveAnalysis, t]
-    );
-
-    // Auto-analyze on subtitle change, debounced so rapid subtitle flips don't spam the API.
+    // Playback never starts an API request. It only swaps in an analysis that
+    // was loaded from persistent storage or produced by the explicit batch job.
     useEffect(() => {
-        if (!settings.llmAutoAnalyze) {
-            return;
-        }
         const cached = cacheRef.current.get(line);
-        if (cached) {
-            setAnalysis(cached);
-            setFromCache(true);
-            setError(undefined);
-            return;
-        }
-        const handle = setTimeout(() => void runAnalysis(line), 450);
-        return () => clearTimeout(handle);
-    }, [line, settings.llmAutoAnalyze, runAnalysis]);
-
-    useEffect(() => () => abortRef.current?.abort(), []);
+        setAnalysis(cached);
+        setFromCache(Boolean(cached));
+        setError(undefined);
+    }, [line]);
 
     // Warm up the browser's TTS voice list so the first click has a Japanese voice ready.
     useEffect(() => {
@@ -659,23 +742,26 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
         const skipped = lines.length - todo.length;
         const controller = new AbortController();
         batchAbortRef.current = controller;
+        setError(undefined);
         setBatch({ running: true, total: lines.length, done: skipped, analyzed: 0, cached: skipped, failed: 0 });
 
-        await runPool(todo, usingBackend ? 6 : 4, controller.signal, async (text) => {
+        await runPool(chunksOf(todo, LLM_BATCH_SIZE), LLM_BATCH_CONCURRENCY, controller.signal, async (chunk) => {
             try {
-                const { analysis: result, cached } = await resolveAnalysis(text, false, controller.signal);
-                cacheRef.current.set(text, result);
+                const results = await resolveBatch(chunk, controller.signal);
+                for (const result of results) cacheRef.current.set(result.line, result.analysis);
+                const cachedCount = results.filter((result) => result.cached).length;
                 setBatch((p) => ({
                     ...p,
-                    done: p.done + 1,
-                    analyzed: p.analyzed + (cached ? 0 : 1),
-                    cached: p.cached + (cached ? 1 : 0),
+                    done: p.done + results.length,
+                    analyzed: p.analyzed + results.length - cachedCount,
+                    cached: p.cached + cachedCount,
                 }));
-            } catch {
+            } catch (e) {
                 if (controller.signal.aborted) {
                     return;
                 }
-                setBatch((p) => ({ ...p, done: p.done + 1, failed: p.failed + 1 }));
+                setError((current) => current ?? (e instanceof LlmAnalysisError ? e.message : String(e)));
+                setBatch((p) => ({ ...p, done: p.done + chunk.length, failed: p.failed + chunk.length }));
             }
         });
 
@@ -686,7 +772,7 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
             setAnalysis(cachedCurrent);
             setFromCache(true);
         }
-    }, [allSubtitles, configured, usingBackend, resolveAnalysis, line]);
+    }, [allSubtitles, configured, resolveBatch, line]);
 
     const stopBatch = useCallback(() => {
         batchAbortRef.current?.abort();
@@ -711,14 +797,49 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
         <Paper
             elevation={0}
             sx={{
-                width,
-                minWidth: width,
+                width: panelWidth,
+                minWidth: panelWidth,
                 height: '100%',
                 overflowY: 'auto',
-                p: 2,
+                p: 2.25,
+                position: 'relative',
                 bgcolor: 'background.paper',
             }}
         >
+            <Box
+                role="separator"
+                aria-label="调整 AI 字幕解析面板宽度"
+                aria-orientation="vertical"
+                tabIndex={0}
+                onPointerDown={beginResize}
+                onKeyDown={(event) => {
+                    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                    event.preventDefault();
+                    const next = clampPanelWidth(panelWidth + (event.key === 'ArrowLeft' ? 24 : -24));
+                    setPanelWidth(next);
+                    window.localStorage.setItem('asbplayer.llmAnalysisPanelWidth', String(next));
+                }}
+                sx={{
+                    position: 'absolute',
+                    inset: '0 auto 0 0',
+                    width: 8,
+                    cursor: 'col-resize',
+                    zIndex: 1,
+                    '&::after': {
+                        content: '""',
+                        position: 'absolute',
+                        left: 2,
+                        top: '42%',
+                        width: 3,
+                        height: 54,
+                        borderRadius: 999,
+                        bgcolor: 'divider',
+                        transition: 'background-color 160ms ease',
+                    },
+                    '&:hover::after, &:focus-visible::after': { bgcolor: 'primary.main' },
+                    '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: -2 },
+                }}
+            />
             {/* Header */}
             <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.5 }}>
                 <Box
@@ -752,19 +873,6 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                         )}
                     </Tooltip>
                 )}
-                {line && (
-                    <Tooltip title={t('llmAnalysis.reanalyze')} arrow>
-                        <span>
-                            <IconButton
-                                size="small"
-                                disabled={loading || !configured}
-                                onClick={() => void runAnalysis(line, true)}
-                            >
-                                <RefreshIcon fontSize="small" />
-                            </IconButton>
-                        </span>
-                    </Tooltip>
-                )}
             </Stack>
 
             {/* Episode batch control */}
@@ -772,9 +880,10 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                 <Box sx={{ mb: 1.5 }}>
                     {!batch.running ? (
                         <Button
-                            size="small"
+                            size="medium"
                             fullWidth
-                            variant="outlined"
+                            variant="contained"
+                            disableElevation
                             startIcon={<PlaylistPlayIcon />}
                             onClick={() => void runBatch()}
                             sx={{ borderRadius: '11px', py: 0.75 }}
@@ -800,6 +909,11 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                         <Typography variant="caption" color="text.secondary">
                             {t('llmAnalysis.episodeDone', { analyzed: batch.analyzed, cached: batch.cached })}
                             {batch.failed > 0 ? ` · ${batch.failed} ✗` : ''}
+                        </Typography>
+                    )}
+                    {!batch.running && batch.total === 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75 }}>
+                            {t('llmAnalysis.batchHint', { size: LLM_BATCH_SIZE })}
                         </Typography>
                     )}
                 </Box>
@@ -844,27 +958,10 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                         </Tooltip>
                     </Stack>
 
-                    {!settings.llmAutoAnalyze && !analysis && !loading && (
-                        <Button
-                            size="small"
-                            variant="contained"
-                            disableElevation
-                            startIcon={<AutoAwesomeIcon />}
-                            disabled={!configured}
-                            onClick={() => void runAnalysis(line)}
-                            sx={{ mb: 1 }}
-                        >
-                            {t('llmAnalysis.analyze')}
-                        </Button>
-                    )}
-
-                    {loading && (
-                        <Stack direction="row" alignItems="center" spacing={1} sx={{ my: 1 }}>
-                            <CircularProgress size={16} />
-                            <Typography variant="body2" color="text.secondary">
-                                {t('llmAnalysis.analyzing')}
-                            </Typography>
-                        </Stack>
+                    {!analysis && !batch.running && (
+                        <Alert severity="info" sx={{ my: 1 }}>
+                            {t('llmAnalysis.notAnalyzed')}
+                        </Alert>
                     )}
 
                     {error && (
@@ -913,14 +1010,53 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                             {analysis.reading && (
                                 <Box>
                                     <SectionLabel>{t('llmAnalysis.reading')}</SectionLabel>
-                                    <Typography variant="body2" color="text.secondary">
-                                        {analysis.reading}
+                                    <Box
+                                        sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', rowGap: 0.4 }}
+                                    >
+                                        {analysis.tokens.map((token, index) => {
+                                            const tokenReading = token.reading || token.surface;
+                                            const active = activeTokenIndex === index;
+                                            return (
+                                                <Box
+                                                    key={`${tokenReading}-${index}`}
+                                                    component="span"
+                                                    onMouseEnter={() => handleTokenHoverStart(index, tokenReading)}
+                                                    onMouseLeave={handleTokenHoverEnd}
+                                                    sx={{
+                                                        display: 'inline-flex',
+                                                        flexDirection: 'column',
+                                                        px: 0.25,
+                                                        py: 0.2,
+                                                        borderRadius: 1,
+                                                        bgcolor: active ? 'action.selected' : 'transparent',
+                                                        color: active ? 'primary.main' : 'text.secondary',
+                                                        transition: 'background-color 160ms ease, color 160ms ease',
+                                                        cursor: 'default',
+                                                    }}
+                                                >
+                                                    <Typography
+                                                        component="span"
+                                                        sx={{ fontSize: '0.94rem', lineHeight: 1.35 }}
+                                                    >
+                                                        {tokenReading}
+                                                    </Typography>
+                                                    <Typography
+                                                        component="span"
+                                                        sx={{ fontSize: '0.66rem', color: 'text.disabled' }}
+                                                    >
+                                                        {kanaToRomaji(tokenReading)}
+                                                    </Typography>
+                                                </Box>
+                                            );
+                                        })}
+                                    </Box>
+                                    <Typography
+                                        variant="caption"
+                                        color="text.disabled"
+                                        sx={{ display: 'block', mt: 0.35 }}
+                                    >
+                                        悬停读音或词卡即可朗读并同步高亮
                                     </Typography>
-                                    {kanaToRomaji(analysis.reading) && (
-                                        <Typography variant="caption" color="text.disabled">
-                                            {kanaToRomaji(analysis.reading)}
-                                        </Typography>
-                                    )}
                                 </Box>
                             )}
 
@@ -931,12 +1067,18 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                                         {analysis.tokens.map((token, i) => (
                                             <TokenChip
                                                 key={`${token.surface}-${i}`}
+                                                index={i}
                                                 surface={token.surface}
                                                 reading={token.reading}
                                                 gloss={token.gloss}
                                                 pos={token.pos}
                                                 inflection={token.inflection}
+                                                active={activeTokenIndex === i}
+                                                copied={copiedTokenIndex === i}
                                                 onSpeak={speakWord}
+                                                onHoverStart={handleTokenHoverStart}
+                                                onHoverEnd={handleTokenHoverEnd}
+                                                onCopy={copyToken}
                                             />
                                         ))}
                                     </Box>
@@ -951,7 +1093,11 @@ const SubtitleAnalysisPanel: React.FC<Props> = ({
                                             <Paper
                                                 key={`${point.pattern}-${i}`}
                                                 variant="outlined"
-                                                sx={{ p: 1, borderLeft: 3, borderLeftColor: 'primary.main' }}
+                                                sx={{
+                                                    p: 1.15,
+                                                    borderColor: 'divider',
+                                                    bgcolor: 'action.hover',
+                                                }}
                                             >
                                                 <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 0.5 }}>
                                                     <Typography variant="body2" sx={{ fontWeight: 700, flexGrow: 1 }}>

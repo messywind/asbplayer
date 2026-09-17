@@ -31,7 +31,6 @@ corepack yarn workspace @project/client start
 打开右上角 **设置（Settings）→ Misc（杂项）→ AI Grammar Analysis**：
 
 - **Enable AI analysis panel**：打开分析面板（默认关闭）。
-- **Auto-analyze current subtitle**：字幕切换时自动分析（默认开）。关掉则改为手动点“Analyze”。
 - **API Key**：你的密钥。
 - **API Base URL**：OpenAI 兼容地址，**不要带** `/chat/completions`。
 - **Model**：模型名。
@@ -44,7 +43,7 @@ corepack yarn workspace @project/client start
 | OpenAI | `https://api.openai.com/v1` | `gpt-4o-mini` |
 | 本地 Ollama | `http://127.0.0.1:11434/v1` | 如 `qwen2.5:14b` |
 
-填好后，播放到有日文字幕的地方，右侧面板就会显示：
+填好后，先在右侧面板点击 **「一键解析整集」**。解析完成后，播放到对应日文字幕时会直接显示：
 
 - **Translation**：整句中文翻译（可一键复制）
 - **Reading**：整句假名读音 + 罗马音
@@ -60,7 +59,7 @@ corepack yarn workspace @project/client start
 - **单词**：点词卡走后端代理的 [VOICEVOX](https://voicevox.hiroshiba.jp/)（本地、免费、自然的日语神经 TTS）。
   没跑后端 / 没装 VOICEVOX 时，自动回退到浏览器自带 TTS。
 
-分析结果会按“字幕原文”缓存，重复出现的台词不会重复请求。
+播放和切换字幕不会触发 API 请求。分析结果会按“字幕原文”缓存，重复出现的台词不会重复请求。
 
 #### VOICEVOX 引擎部署流程
 
@@ -125,8 +124,9 @@ VOICEVOX_SPEAKER=1                     # 音色 id，用上面的 /speakers 查
 
 ### 3. 缓存 / 一次性分析整集 / 持久化（可选，推荐）
 
-面板顶部有一个 **「分析整集字幕 (N)」** 按钮：点一下就用并发池把整条字幕轨里所有
-不重复的台词一次性全解析、填进缓存，之后逐句播放直接秒出、不再逐句调接口。
+面板顶部有一个 **「一键解析整集 (N)」** 按钮：点一下会先过滤已有缓存，再把剩余台词
+按每批 8 条合并发送，最多同时处理 2 批。解析结果逐条写入缓存，之后播放只读取结果，
+不会跟随字幕切换调用接口。
 
 默认缓存只在内存里（刷新即失）。如果你想**持久化到文件**、或**部署到服务器**、
 或**拿数据做统计分析**，就再跑一个随仓库附带的零依赖后端 `server/`：
@@ -190,8 +190,8 @@ node server.mjs           # 默认 http://localhost:3939
 
 - `common/llm-analysis/` — 与 UI 解耦的分析引擎
   - `types.ts` — 类型定义（`SubtitleAnalysis` / `AnalyzedToken` / `GrammarPoint` / `LlmConfig` …）
-  - `llm-analysis.ts` — `analyzeSubtitle()` 主函数、提示词、JSON 解析/校验
-  - `backend-client.ts` — 走缓存服务器的客户端（`analyzeViaBackend` / `fetchEpisodeAnalyses` / `backendTtsUrl` / `fetchBackendStats` / `pingBackend`）
+  - `llm-analysis.ts` — 单句兼容接口与 `analyzeSubtitles()` 批量分析、提示词、JSON 解析/校验
+  - `backend-client.ts` — 走缓存服务器的客户端（含 `analyzeBatchViaBackend`、整集缓存载入和 TTS）
   - `episode-name.ts` — 从文件名解析「番剧 + 集数」（用来按集归档缓存）
   - `llm-analysis.test.ts` / `episode-name.test.ts` — 单元测试（Jest，全绿）
   - `index.ts` — 导出
@@ -222,7 +222,7 @@ node server.mjs           # 默认 http://localhost:3939
   纯 `fetch`，可单独测试/复用。
 - **稳健解析**：即便模型输出带 ```json ``` 代码块或多余文字，也能提取出 JSON；
   字段缺失/类型不对会被容错处理，翻译缺失才报错。
-- **不打断播放**：请求带超时与取消（字幕快速切换时自动放弃上一条请求），结果按原文缓存。
+- **不打断播放**：播放过程不发分析请求；批量任务支持停止，结果按原文缓存。
 
 ---
 

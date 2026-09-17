@@ -45,6 +45,18 @@ JSON 必须严格符合以下结构：
 - 所有讲解性文字用简体中文。
 - 严格输出合法 JSON，字符串内的引号要正确转义。`;
 
+/**
+ * Batch mode keeps the expensive teaching/schema prompt as a shared prefix,
+ * then asks the model to return one keyed result per input line.
+ */
+export const BATCH_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+批量模式补充规则（优先于上面关于“一行台词”和顶层 JSON 结构的说明）：
+- 你会收到一个包含多条台词的 JSON 数组，每条都有 id 和 line。
+- 必须逐条独立分析，不得合并、省略或改变顺序。
+- 只输出一个 JSON 对象：{"results":[...]} 。
+- results 中每项必须原样返回对应 id，并在同一对象中返回 translation、reading、tokens、grammar 和可选 notes。`;
+
 interface ChatMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
@@ -61,6 +73,14 @@ function buildUserContent(line: string, options?: AnalyzeOptions): string {
     }
     parts.push('请分析【需要分析的台词】这一行，按要求只返回 JSON。上下文仅用于理解语境，不要分析上下文本身。');
     return parts.join('\n');
+}
+
+function buildBatchUserContent(lines: string[]): string {
+    return JSON.stringify(
+        lines.map((line, index) => ({ id: String(index), line })),
+        null,
+        0
+    );
 }
 
 /** Normalize a base URL and produce the chat completions endpoint. */
@@ -259,4 +279,114 @@ export async function analyzeSubtitle(
 
     const parsed = extractJsonObject(content);
     return coerceAnalysis(parsed, text);
+}
+
+/** Analyze several independent subtitle lines in one chat-completions request. */
+export async function analyzeSubtitles(
+    lines: string[],
+    config: LlmConfig,
+    options?: Pick<AnalyzeOptions, 'signal' | 'timeoutMs' | 'temperature'>
+): Promise<SubtitleAnalysis[]> {
+    const texts = lines.map((line) => line.trim());
+    if (texts.length === 0) {
+        return [];
+    }
+    if (texts.some((line) => !line)) {
+        throw new LlmAnalysisError('批量台词中包含空文本');
+    }
+    if (!config.apiKey) {
+        throw new LlmAnalysisError('未配置 API Key');
+    }
+    if (!config.baseUrl) {
+        throw new LlmAnalysisError('未配置 API 地址 (baseUrl)');
+    }
+    if (!config.model) {
+        throw new LlmAnalysisError('未配置模型名称');
+    }
+
+    const body = {
+        model: config.model,
+        messages: [
+            { role: 'system' as const, content: BATCH_SYSTEM_PROMPT },
+            { role: 'user' as const, content: buildBatchUserContent(texts) },
+        ],
+        temperature: options?.temperature ?? 0.2,
+        response_format: { type: 'json_object' as const },
+        stream: false,
+    };
+
+    let signal = options?.signal;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!signal) {
+        const controller = new AbortController();
+        signal = controller.signal;
+        timer = setTimeout(() => controller.abort(), options?.timeoutMs ?? 60000);
+    }
+
+    let response: Response;
+    try {
+        response = await fetch(chatCompletionsUrl(config.baseUrl), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${config.apiKey}`,
+            },
+            body: JSON.stringify(body),
+            signal,
+        });
+    } catch (e) {
+        if ((e as Error)?.name === 'AbortError') {
+            throw new LlmAnalysisError('请求超时或被取消', e);
+        }
+        throw new LlmAnalysisError('网络请求失败，请检查 API 地址与网络', e);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
+        }
+    }
+
+    if (!response.ok) {
+        let detail = '';
+        try {
+            detail = await response.text();
+        } catch {
+            /* ignore */
+        }
+        throw new LlmAnalysisError(`API 返回错误 ${response.status}: ${detail.slice(0, 300)}`);
+    }
+
+    let payload: any;
+    try {
+        payload = await response.json();
+    } catch (e) {
+        throw new LlmAnalysisError('无法解析 API 响应 JSON', e);
+    }
+    const content: unknown = payload?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || content.length === 0) {
+        throw new LlmAnalysisError('API 响应中没有文本内容');
+    }
+
+    const parsed = extractJsonObject(content) as { results?: unknown };
+    if (!Array.isArray(parsed?.results)) {
+        throw new LlmAnalysisError('模型未返回批量 results 数组');
+    }
+    const byId = new Map<string, Record<string, unknown>>();
+    for (const item of parsed.results) {
+        if (typeof item !== 'object' || item === null) {
+            continue;
+        }
+        const object = item as Record<string, unknown>;
+        byId.set(String(object.id ?? ''), object);
+    }
+    return texts.map((text, index) => {
+        const item = byId.get(String(index));
+        if (!item) {
+            throw new LlmAnalysisError(`模型缺少第 ${index + 1} 条台词的分析结果`);
+        }
+        const raw =
+            typeof item.analysis === 'object' && item.analysis !== null
+                ? (item.analysis as Record<string, unknown>)
+                : item;
+        return coerceAnalysis(raw, text);
+    });
 }

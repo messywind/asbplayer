@@ -89,10 +89,7 @@ export default function LandingPage({
     const smallScreen = useMediaQuery(theme.breakpoints.down(500));
     const showVideoElementSelector =
         extension.supportsLandingPageStreamingVideoElementSelector && videoElements.length > 0;
-    let buttonCount = 1;
-    if (canRestoreLastSession) {
-        buttonCount++;
-    }
+    let buttonCount = 2;
     if (showVideoElementSelector) {
         buttonCount++;
     }
@@ -181,17 +178,17 @@ export default function LandingPage({
                         >
                             {t('action.loadSubtitles')}
                         </Button>
-                        {canRestoreLastSession && (
-                            <Button
-                                variant="outlined"
-                                color="primary"
-                                startIcon={<RestoreIcon />}
-                                onClick={onRestoreLastSession}
-                                fullWidth
-                            >
-                                {t('landing.restoreLastSession')}
-                            </Button>
-                        )}
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            startIcon={<RestoreIcon />}
+                            onClick={onRestoreLastSession}
+                            disabled={!canRestoreLastSession}
+                            title={canRestoreLastSession ? undefined : '首次选择本地文件后，这里会保留上次打开的会话'}
+                            fullWidth
+                        >
+                            {t('landing.restoreLastSession')}
+                        </Button>
                         {showVideoElementSelector &&
                             extension.supportsLandingPageStreamingVideoElementSelector &&
                             videoElements.length > 0 && (

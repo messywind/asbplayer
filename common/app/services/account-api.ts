@@ -5,6 +5,7 @@ export interface AccountUser {
     username: string;
     role: 'admin' | 'user';
     hasApiKey: boolean;
+    createdAt?: string;
 }
 
 export interface AnimeSpace {
@@ -38,6 +39,34 @@ export interface InviteSummary {
     disabled: number;
     createdAt: string;
     createdBy: string;
+}
+
+export interface UsageSummary {
+    requests: number;
+    apiCalls: number;
+    cacheHits: number;
+    apiCalls30d: number;
+    lastUsedAt?: string;
+}
+
+export interface PublicMember {
+    id: number;
+    username: string;
+    role: 'admin' | 'user';
+    createdAt: string;
+    spaceCount: number;
+    episodeCount: number;
+    analysisCount: number;
+    requests: number;
+    apiCalls: number;
+    cacheHits: number;
+    lastUsedAt?: string;
+    spaces: AnimeSpace[];
+}
+
+export interface AdminUser extends PublicMember {
+    disabled: boolean;
+    hasApiKey: boolean;
 }
 
 export class AccountApiError extends Error {
@@ -81,6 +110,13 @@ export const accountApi = {
             body: JSON.stringify({ username, password, inviteCode }),
         }),
     logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST', body: '{}' }),
+    communityUsers: () => request<{ users: PublicMember[] }>('/api/community/users'),
+    usage: () => request<{ usage: UsageSummary }>('/api/account/usage'),
+    changePassword: (currentPassword: string, newPassword: string) =>
+        request<{ ok: boolean }>('/api/account/password', {
+            method: 'PUT',
+            body: JSON.stringify({ currentPassword, newPassword }),
+        }),
     saveApiKey: (apiKey: string) =>
         request<{ configured: boolean }>('/api/account/api-key', {
             method: 'PUT',
@@ -107,4 +143,21 @@ export const accountApi = {
             body: JSON.stringify({ maxUses, expiresInDays }),
         }),
     disableInvite: (id: number) => request<{ ok: boolean }>(`/api/admin/invites/${id}`, { method: 'DELETE' }),
+    adminUsers: () => request<{ users: AdminUser[] }>('/api/admin/users'),
+    createUser: (username: string, password: string, role: 'admin' | 'user') =>
+        request<{ user: AdminUser }>('/api/admin/users', {
+            method: 'POST',
+            body: JSON.stringify({ username, password, role }),
+        }),
+    updateUser: (id: number, input: { username: string; role: 'admin' | 'user'; disabled: boolean }) =>
+        request<{ user: AdminUser }>(`/api/admin/users/${id}`, {
+            method: 'PATCH',
+            body: JSON.stringify(input),
+        }),
+    resetUserPassword: (id: number, password: string) =>
+        request<{ ok: boolean }>(`/api/admin/users/${id}/password`, {
+            method: 'PUT',
+            body: JSON.stringify({ password }),
+        }),
+    deleteUser: (id: number) => request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
 };

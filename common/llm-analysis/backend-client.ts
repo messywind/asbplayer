@@ -14,6 +14,10 @@ export interface BackendAnalyzeResult {
     model?: string;
 }
 
+export interface BackendBatchAnalyzeItem extends BackendAnalyzeResult {
+    line: string;
+}
+
 export interface BackendStats {
     lines: number;
     tokenTotal: number;
@@ -78,6 +82,51 @@ export async function analyzeViaBackend(
         throw new LlmAnalysisError(detail || `缓存服务器返回错误 ${response.status}`);
     }
     return (await response.json()) as BackendAnalyzeResult;
+}
+
+/** Analyze several lines through one backend request. Cached lines are reused server-side. */
+export async function analyzeBatchViaBackend(
+    backendUrl: string,
+    lines: string[],
+    options?: { signal?: AbortSignal; anime?: string; episode?: string; episodeId?: number }
+): Promise<BackendBatchAnalyzeItem[]> {
+    if (lines.length === 0) {
+        return [];
+    }
+    let response: Response;
+    try {
+        response = await fetch(apiUrl(backendUrl, '/api/analyze-batch'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                lines,
+                anime: options?.anime,
+                episode: options?.episode,
+                episodeId: options?.episodeId,
+            }),
+            signal: options?.signal,
+            credentials: 'include',
+        });
+    } catch (e) {
+        if ((e as Error)?.name === 'AbortError') {
+            throw new LlmAnalysisError('请求已取消', e);
+        }
+        throw new LlmAnalysisError('无法连接缓存服务器，请检查地址与服务是否启动', e);
+    }
+    if (!response.ok) {
+        let detail = '';
+        try {
+            detail = ((await response.json()) as { error?: string }).error ?? '';
+        } catch {
+            /* ignore */
+        }
+        throw new LlmAnalysisError(detail || `缓存服务器返回错误 ${response.status}`);
+    }
+    const payload = (await response.json()) as { results?: BackendBatchAnalyzeItem[] };
+    if (!Array.isArray(payload.results)) {
+        throw new LlmAnalysisError('缓存服务器未返回批量分析结果');
+    }
+    return payload.results;
 }
 
 export interface EpisodeAnalyses {

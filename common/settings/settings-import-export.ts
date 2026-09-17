@@ -758,9 +758,6 @@ const settingsSchema = {
         llmAnalysisEnabled: {
             type: 'boolean',
         },
-        llmAutoAnalyze: {
-            type: 'boolean',
-        },
         llmApiKey: {
             type: 'string',
         },

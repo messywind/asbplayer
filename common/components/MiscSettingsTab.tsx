@@ -111,7 +111,6 @@ const MiscSettingTab: React.FC<Props> = ({
         webSocketClientEnabled,
         webSocketServerUrl,
         llmAnalysisEnabled,
-        llmAutoAnalyze,
         llmApiKey,
         llmBaseUrl,
         llmModel,
@@ -1050,17 +1049,9 @@ const MiscSettingTab: React.FC<Props> = ({
                     label={t('settings.llmAnalysisEnabled')}
                     labelPlacement="start"
                 />
-                <SwitchLabelWithHoverEffect
-                    control={
-                        <Switch
-                            checked={llmAutoAnalyze}
-                            disabled={!llmAnalysisEnabled}
-                            onChange={(e) => onSettingChanged('llmAutoAnalyze', e.target.checked)}
-                        />
-                    }
-                    label={t('settings.llmAutoAnalyze')}
-                    labelPlacement="start"
-                />
+                <Typography color="text.secondary" variant="body2">
+                    {t('settings.llmBatchOnlyDescription')}
+                </Typography>
                 {account ? (
                     <Typography color="text.secondary">
                         登录模式下，API Key 请在顶部账号按钮中的“LLM API

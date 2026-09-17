@@ -49,6 +49,14 @@ JSON 必须严格符合以下结构：
 - 所有讲解性文字用简体中文。
 - 严格输出合法 JSON，字符串内的引号要正确转义。`;
 
+export const BATCH_SYSTEM_PROMPT = `${SYSTEM_PROMPT}
+
+批量模式补充规则（优先于上面关于“一行台词”和顶层 JSON 结构的说明）：
+- 你会收到一个包含多条台词的 JSON 数组，每条都有 id 和 line。
+- 必须逐条独立分析，不得合并、省略或改变顺序。
+- 只输出一个 JSON 对象：{"results":[...]} 。
+- results 中每项必须原样返回对应 id，并在同一对象中返回 translation、reading、tokens、grammar 和可选 notes。`;
+
 const HTML_TAG_REGEX = /<[^>]+>/g;
 // ASS/SSA inline override blocks like {\an8} or {\i1}.
 const ASS_OVERRIDE_REGEX = /\{[^}]*\}/g;
@@ -257,4 +265,84 @@ export async function analyzeLine(line, config, options = {}) {
 
     const parsed = extractJsonObject(content);
     return coerceAnalysis(parsed, text);
+}
+
+/** Analyze multiple independent subtitle lines in one upstream request. */
+export async function analyzeLines(lines, config, options = {}) {
+    const texts = lines.map(normalizeLine);
+    if (texts.length === 0) return [];
+    if (texts.some((line) => !line)) throw new LlmAnalysisError('批量台词中包含空文本');
+    if (!config.apiKey) throw new LlmAnalysisError('未配置 API Key');
+    if (!config.baseUrl) throw new LlmAnalysisError('未配置 API 地址 (baseUrl)');
+    if (!config.model) throw new LlmAnalysisError('未配置模型名称');
+
+    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    const body = {
+        model: config.model,
+        messages: [
+            { role: 'system', content: BATCH_SYSTEM_PROMPT },
+            {
+                role: 'user',
+                content: JSON.stringify(texts.map((line, index) => ({ id: String(index), line }))),
+            },
+        ],
+        temperature: options.temperature ?? 0.2,
+        response_format: { type: 'json_object' },
+        stream: false,
+    };
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 90000);
+    let response;
+    try {
+        response = await fetchImpl(chatCompletionsUrl(config.baseUrl), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${config.apiKey}`,
+            },
+            body: JSON.stringify(body),
+            signal: controller.signal,
+        });
+    } catch (e) {
+        if (e?.name === 'AbortError') throw new LlmAnalysisError('请求超时或被取消', e);
+        throw new LlmAnalysisError('网络请求失败，请检查 API 地址与网络', e);
+    } finally {
+        clearTimeout(timer);
+    }
+
+    if (!response.ok) {
+        let detail = '';
+        try {
+            detail = await response.text();
+        } catch {
+            /* ignore */
+        }
+        throw new LlmAnalysisError(`API 返回错误 ${response.status}: ${String(detail).slice(0, 300)}`);
+    }
+
+    let payload;
+    try {
+        payload = await response.json();
+    } catch (e) {
+        throw new LlmAnalysisError('无法解析 API 响应 JSON', e);
+    }
+    const content = payload?.choices?.[0]?.message?.content;
+    if (typeof content !== 'string' || content.length === 0) {
+        throw new LlmAnalysisError('API 响应中没有文本内容');
+    }
+
+    const parsed = extractJsonObject(content);
+    if (!Array.isArray(parsed?.results)) {
+        throw new LlmAnalysisError('模型未返回批量 results 数组');
+    }
+    const byId = new Map();
+    for (const item of parsed.results) {
+        if (item && typeof item === 'object') byId.set(String(item.id ?? ''), item);
+    }
+    return texts.map((text, index) => {
+        const item = byId.get(String(index));
+        if (!item) throw new LlmAnalysisError(`模型缺少第 ${index + 1} 条台词的分析结果`);
+        return coerceAnalysis(item.analysis && typeof item.analysis === 'object' ? item.analysis : item, text);
+    });
 }

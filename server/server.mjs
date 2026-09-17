@@ -6,7 +6,7 @@ import http from 'node:http';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { analyzeLine, LlmAnalysisError } from './lib/llm.mjs';
+import { analyzeLine, analyzeLines, LlmAnalysisError } from './lib/llm.mjs';
 import { MultiUserDatabase } from './lib/database.mjs';
 import {
     decryptSecret,
@@ -123,6 +123,7 @@ function publicUser(user) {
         username: user.username,
         role: user.role,
         hasApiKey: Boolean(user.encrypted_api_key),
+        createdAt: user.created_at,
     };
 }
 
@@ -138,6 +139,15 @@ function validatePassword(password) {
     const value = String(password ?? '');
     if (value.length < 10 || value.length > 200) throw new HttpError(400, '密码至少需要 10 位');
     return value;
+}
+
+function validateRole(role) {
+    if (role !== 'admin' && role !== 'user') throw new HttpError(400, '账号角色无效');
+    return role;
+}
+
+function adminUserSummary(userId) {
+    return database.userSummaries({ includeDisabled: true }).find((user) => user.id === Number(userId));
 }
 
 function sessionToken(req) {
@@ -213,6 +223,62 @@ async function getOrCreateAnalysis(line, { force = false, user, episodeId }) {
     } finally {
         inFlight.delete(key);
     }
+}
+
+async function getOrCreateAnalyses(lines, { user, episodeId }) {
+    const entries = lines.map((line) => ({ line, key: hashLine(line) }));
+    const unique = new Map();
+    for (const entry of entries) {
+        if (!unique.has(entry.key)) unique.set(entry.key, entry.line);
+    }
+
+    const resolved = new Map();
+    const pending = [];
+    const fresh = [];
+    const owned = new Map();
+
+    for (const [key, line] of unique) {
+        const hit = database.getAnalysis(line);
+        if (hit) {
+            resolved.set(key, { analysis: hit.analysis, cached: true, model: hit.model });
+            continue;
+        }
+        const active = inFlight.get(key);
+        if (active) {
+            pending.push(active.then((result) => resolved.set(key, { ...result, cached: true })));
+            continue;
+        }
+        fresh.push({ key, line });
+    }
+
+    if (fresh.length > 0) {
+        const batchPromise = analyzeLines(
+            fresh.map((entry) => entry.line),
+            { apiKey: userApiKey(user), baseUrl: CONFIG.baseUrl, model: CONFIG.model },
+            { temperature: CONFIG.temperature }
+        );
+        fresh.forEach((entry, index) => {
+            const itemPromise = batchPromise.then((analyses) => {
+                const analysis = analyses[index];
+                database.putAnalysis(entry.line, analysis, CONFIG.model);
+                return { analysis, model: CONFIG.model };
+            });
+            owned.set(entry.key, itemPromise);
+            inFlight.set(entry.key, itemPromise);
+            pending.push(itemPromise.then((result) => resolved.set(entry.key, { ...result, cached: false })));
+        });
+    }
+
+    try {
+        await Promise.all(pending);
+    } finally {
+        for (const [key, promise] of owned) {
+            if (inFlight.get(key) === promise) inFlight.delete(key);
+        }
+    }
+
+    for (const line of unique.values()) database.associateAnalysis(user.id, episodeId, line);
+    return entries.map(({ line, key }) => ({ line, ...resolved.get(key) }));
 }
 
 async function synthesizeVoicevox(text, speaker) {
@@ -356,6 +422,27 @@ async function handleApi(req, res, url, route) {
     }
 
     const user = requireUser(req);
+    if (route === 'GET /api/community/users') {
+        const users = database.userSummaries().map(({ disabled, hasApiKey, ...summary }) => summary);
+        sendJson(res, 200, { users });
+        return true;
+    }
+    if (route === 'GET /api/account/usage') {
+        sendJson(res, 200, { usage: database.usageSummary(user.id) });
+        return true;
+    }
+    if (route === 'PUT /api/account/password') {
+        const body = await jsonBody(req);
+        if (!(await verifyPassword(body.currentPassword, user.password_hash))) {
+            throw new HttpError(400, '当前密码不正确');
+        }
+        const newPassword = validatePassword(body.newPassword);
+        database.setPassword(user.id, await hashPassword(newPassword));
+        database.deleteUserSessions(user.id);
+        const session = issueSession(user.id);
+        sendJson(res, 200, { ok: true }, { 'Set-Cookie': cookieHeader(session.token, session.maxAge) });
+        return true;
+    }
     if (route === 'GET /api/account/api-key') {
         sendJson(res, 200, { configured: Boolean(user.encrypted_api_key) });
         return true;
@@ -419,7 +506,38 @@ async function handleApi(req, res, url, route) {
                 user,
                 episodeId: body.episodeId ? Number(body.episodeId) : undefined,
             });
+            database.recordApiUsage(user.id, {
+                endpoint: 'analyze',
+                model: result.model,
+                cached: result.cached,
+            });
             sendJson(res, 200, result);
+        } catch (error) {
+            if (error instanceof HttpError) throw error;
+            const message = error instanceof LlmAnalysisError ? error.message : String(error?.message || error);
+            throw new HttpError(502, message);
+        }
+        return true;
+    }
+    if (route === 'POST /api/analyze-batch') {
+        const body = await jsonBody(req);
+        if (!Array.isArray(body.lines) || body.lines.length === 0) {
+            throw new HttpError(400, '缺少 lines');
+        }
+        if (body.lines.length > 12) throw new HttpError(400, '每批最多 12 条台词');
+        const lines = body.lines.map((line) => String(line ?? '').trim());
+        if (lines.some((line) => !line)) throw new HttpError(400, 'lines 中包含空台词');
+        try {
+            const results = await getOrCreateAnalyses(lines, {
+                user,
+                episodeId: body.episodeId ? Number(body.episodeId) : undefined,
+            });
+            database.recordApiUsage(user.id, {
+                endpoint: 'analyze-batch',
+                model: results.find((result) => result.model)?.model,
+                cached: results.every((result) => result.cached),
+            });
+            sendJson(res, 200, { results });
         } catch (error) {
             if (error instanceof HttpError) throw error;
             const message = error instanceof LlmAnalysisError ? error.message : String(error?.message || error);
@@ -463,6 +581,78 @@ async function handleApi(req, res, url, route) {
     if (route === 'GET /api/admin/invites') {
         requireAdmin(req);
         sendJson(res, 200, { invites: database.listInvites() });
+        return true;
+    }
+    if (route === 'GET /api/admin/users') {
+        requireAdmin(req);
+        sendJson(res, 200, { users: database.userSummaries({ includeDisabled: true }) });
+        return true;
+    }
+    if (route === 'POST /api/admin/users') {
+        requireAdmin(req);
+        const body = await jsonBody(req);
+        const username = validateUsername(body.username);
+        const password = validatePassword(body.password);
+        const role = validateRole(body.role ?? 'user');
+        try {
+            const created = database.createUser(username, await hashPassword(password), role);
+            sendJson(res, 201, { user: adminUserSummary(created.id) });
+        } catch (error) {
+            if (String(error?.message).includes('UNIQUE')) throw new HttpError(409, '用户名已存在');
+            throw error;
+        }
+        return true;
+    }
+    const adminUserMatch = url.pathname.match(/^\/api\/admin\/users\/(\d+)$/);
+    if (req.method === 'PATCH' && adminUserMatch) {
+        const admin = requireAdmin(req);
+        const target = database.getUserById(adminUserMatch[1]);
+        if (!target) throw new HttpError(404, '未找到该账号');
+        const body = await jsonBody(req);
+        const username = validateUsername(body.username ?? target.username);
+        const role = validateRole(body.role ?? target.role);
+        const disabled = body.disabled === undefined ? Boolean(target.disabled) : Boolean(body.disabled);
+        const removesAdminAccess = target.role === 'admin' && (role !== 'admin' || disabled);
+        if (Number(target.id) === Number(admin.id) && removesAdminAccess) {
+            throw new HttpError(409, '不能停用自己或移除自己的管理员权限');
+        }
+        if (removesAdminAccess && database.adminCount <= 1) {
+            throw new HttpError(409, '系统必须至少保留一名可用管理员');
+        }
+        try {
+            database.updateUser(target.id, { username, role, disabled });
+            if (disabled) database.deleteUserSessions(target.id);
+            sendJson(res, 200, { user: adminUserSummary(target.id) });
+        } catch (error) {
+            if (String(error?.message).includes('UNIQUE')) throw new HttpError(409, '用户名已存在');
+            throw error;
+        }
+        return true;
+    }
+    const adminPasswordMatch = url.pathname.match(/^\/api\/admin\/users\/(\d+)\/password$/);
+    if (req.method === 'PUT' && adminPasswordMatch) {
+        const admin = requireAdmin(req);
+        const target = database.getUserById(adminPasswordMatch[1]);
+        if (!target) throw new HttpError(404, '未找到该账号');
+        if (Number(target.id) === Number(admin.id)) {
+            throw new HttpError(409, '请在“API 与安全”中修改自己的密码');
+        }
+        const body = await jsonBody(req);
+        database.setPassword(target.id, await hashPassword(validatePassword(body.password)));
+        database.deleteUserSessions(target.id);
+        sendJson(res, 200, { ok: true });
+        return true;
+    }
+    if (req.method === 'DELETE' && adminUserMatch) {
+        const admin = requireAdmin(req);
+        const target = database.getUserById(adminUserMatch[1]);
+        if (!target) throw new HttpError(404, '未找到该账号');
+        if (Number(target.id) === Number(admin.id)) throw new HttpError(409, '不能删除当前登录账号');
+        if (target.role === 'admin' && !target.disabled && database.adminCount <= 1) {
+            throw new HttpError(409, '系统必须至少保留一名可用管理员');
+        }
+        database.deleteUser(target.id);
+        sendJson(res, 200, { ok: true });
         return true;
     }
     if (route === 'POST /api/admin/invites') {

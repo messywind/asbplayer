@@ -81,9 +81,18 @@ export class MultiUserDatabase {
                 created_at TEXT NOT NULL,
                 PRIMARY KEY(episode_id, line_hash)
             );
+            CREATE TABLE IF NOT EXISTS api_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL,
+                model TEXT,
+                cached INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
             CREATE INDEX IF NOT EXISTS idx_episodes_space ON episodes(space_id);
             CREATE INDEX IF NOT EXISTS idx_episode_analyses_hash ON episode_analyses(line_hash);
+            CREATE INDEX IF NOT EXISTS idx_api_usage_user_created ON api_usage(user_id, created_at);
         `);
     }
 
@@ -112,6 +121,31 @@ export class MultiUserDatabase {
             .prepare('INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)')
             .run(String(username).trim(), passwordHash, role, now());
         return this.getUserById(result.lastInsertRowid);
+    }
+
+    updateUser(userId, { username, role, disabled }) {
+        this.db
+            .prepare('UPDATE users SET username = ?, role = ?, disabled = ? WHERE id = ?')
+            .run(String(username).trim(), role, disabled ? 1 : 0, Number(userId));
+        return this.getUserById(userId);
+    }
+
+    setPassword(userId, passwordHash) {
+        this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, Number(userId));
+    }
+
+    deleteUserSessions(userId) {
+        this.db.prepare('DELETE FROM sessions WHERE user_id = ?').run(Number(userId));
+    }
+
+    deleteUser(userId) {
+        this.db.prepare('DELETE FROM users WHERE id = ?').run(Number(userId));
+    }
+
+    get adminCount() {
+        return Number(
+            this.db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND disabled = 0").get().count
+        );
     }
 
     setApiKey(userId, encryptedApiKey) {
@@ -212,6 +246,79 @@ export class MultiUserDatabase {
                  ORDER BY s.updated_at DESC, s.name COLLATE NOCASE`
             )
             .all(Number(userId));
+    }
+
+    publicLibrary(userId) {
+        return this.db
+            .prepare(
+                `SELECT s.id, s.name, s.created_at AS createdAt, s.updated_at AS updatedAt,
+                        COUNT(DISTINCT e.id) AS episodeCount,
+                        COUNT(ea.line_hash) AS analysisCount
+                 FROM anime_spaces s
+                 LEFT JOIN episodes e ON e.space_id = s.id
+                 LEFT JOIN episode_analyses ea ON ea.episode_id = e.id
+                 WHERE s.user_id = ?
+                 GROUP BY s.id
+                 ORDER BY s.updated_at DESC, s.name COLLATE NOCASE`
+            )
+            .all(Number(userId));
+    }
+
+    recordApiUsage(userId, { endpoint = 'analyze', model, cached = false } = {}) {
+        this.db
+            .prepare('INSERT INTO api_usage (user_id, endpoint, model, cached, created_at) VALUES (?, ?, ?, ?, ?)')
+            .run(Number(userId), endpoint, model || null, cached ? 1 : 0, now());
+    }
+
+    usageSummary(userId) {
+        const row = this.db
+            .prepare(
+                `SELECT COUNT(*) AS requests,
+                        COALESCE(SUM(CASE WHEN cached = 0 THEN 1 ELSE 0 END), 0) AS apiCalls,
+                        COALESCE(SUM(CASE WHEN cached = 1 THEN 1 ELSE 0 END), 0) AS cacheHits,
+                        COALESCE(SUM(CASE WHEN cached = 0 AND julianday(created_at) >= julianday('now', '-30 days') THEN 1 ELSE 0 END), 0) AS apiCalls30d,
+                        MAX(created_at) AS lastUsedAt
+                 FROM api_usage WHERE user_id = ?`
+            )
+            .get(Number(userId));
+        return {
+            requests: Number(row.requests),
+            apiCalls: Number(row.apiCalls),
+            cacheHits: Number(row.cacheHits),
+            apiCalls30d: Number(row.apiCalls30d),
+            lastUsedAt: row.lastUsedAt || undefined,
+        };
+    }
+
+    userSummaries({ includeDisabled = false } = {}) {
+        const rows = this.db
+            .prepare(
+                `SELECT u.id, u.username, u.role, u.disabled, u.created_at AS createdAt,
+                        (SELECT COUNT(*) FROM anime_spaces s WHERE s.user_id = u.id) AS spaceCount,
+                        (SELECT COUNT(*) FROM episodes e JOIN anime_spaces s ON s.id = e.space_id WHERE s.user_id = u.id) AS episodeCount,
+                        (SELECT COUNT(*) FROM episode_analyses ea JOIN episodes e ON e.id = ea.episode_id JOIN anime_spaces s ON s.id = e.space_id WHERE s.user_id = u.id) AS analysisCount,
+                        (SELECT COUNT(*) FROM api_usage au WHERE au.user_id = u.id) AS requests,
+                        (SELECT COUNT(*) FROM api_usage au WHERE au.user_id = u.id AND au.cached = 0) AS apiCalls,
+                        (SELECT COUNT(*) FROM api_usage au WHERE au.user_id = u.id AND au.cached = 1) AS cacheHits,
+                        (SELECT MAX(au.created_at) FROM api_usage au WHERE au.user_id = u.id) AS lastUsedAt
+                 FROM users u
+                 WHERE (? = 1 OR u.disabled = 0)
+                 ORDER BY u.role DESC, u.username COLLATE NOCASE`
+            )
+            .all(includeDisabled ? 1 : 0);
+        return rows.map((row) => ({
+            ...row,
+            id: Number(row.id),
+            disabled: Boolean(row.disabled),
+            spaceCount: Number(row.spaceCount),
+            episodeCount: Number(row.episodeCount),
+            analysisCount: Number(row.analysisCount),
+            requests: Number(row.requests),
+            apiCalls: Number(row.apiCalls),
+            cacheHits: Number(row.cacheHits),
+            hasApiKey: Boolean(this.getUserById(row.id)?.encrypted_api_key),
+            spaces: this.publicLibrary(row.id),
+        }));
     }
 
     createOrUpdateEpisode(userId, spaceId, label, mediaFileName) {

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { AnalysisStore, hashLine } from './lib/store.mjs';
-import { analyzeLine, extractJsonObject, coerceAnalysis, normalizeLine, LlmAnalysisError } from './lib/llm.mjs';
+import { analyzeLine, analyzeLines, extractJsonObject, coerceAnalysis, normalizeLine, LlmAnalysisError } from './lib/llm.mjs';
 import { MultiUserDatabase } from './lib/database.mjs';
 import { decryptSecret, encryptSecret, hashPassword, verifyPassword } from './lib/auth.mjs';
 
@@ -67,6 +67,24 @@ test('analyzeLine surfaces API errors', async () => {
         analyzeLine('次は', { apiKey: 'k', baseUrl: 'https://x/v1', model: 'm' }, { fetchImpl: f }),
         LlmAnalysisError
     );
+});
+
+test('analyzeLines sends one upstream request for multiple subtitles', async () => {
+    const second = { ...SAMPLE, translation: '早上好。' };
+    const f = fakeFetch({
+        results: [
+            { id: '0', ...SAMPLE },
+            { id: '1', ...second },
+        ],
+    });
+    const analyses = await analyzeLines(
+        ['次は', 'おはよう'],
+        { apiKey: 'k', baseUrl: 'https://x/v1', model: 'm' },
+        { fetchImpl: f }
+    );
+    assert.equal(f.calls(), 1);
+    assert.deepEqual(analyses.map((analysis) => analysis.original), ['次は', 'おはよう']);
+    assert.deepEqual(analyses.map((analysis) => analysis.translation), [SAMPLE.translation, second.translation]);
 });
 
 test('store persists and reloads', async () => {
@@ -201,5 +219,47 @@ test('multi-user archives are isolated while analyses are globally shared', asyn
     );
     assert.equal(db.getEpisode(alice.id, bobEpisode.id), undefined, 'users cannot read another user episode');
     assert.equal(db.getEpisode(alice.id, aliceEpisode.id).analyses['次は'].translation, SAMPLE.translation);
+    db.close();
+});
+
+test('usage summaries distinguish external calls from cache hits', () => {
+    const db = new MultiUserDatabase(':memory:');
+    const user = db.createUser('usage-user', 'hash');
+    db.recordApiUsage(user.id, { model: 'deepseek-chat', cached: false });
+    db.recordApiUsage(user.id, { model: 'deepseek-chat', cached: true });
+    db.recordApiUsage(user.id, { model: 'deepseek-chat', cached: true });
+
+    assert.deepEqual(db.usageSummary(user.id), {
+        requests: 3,
+        apiCalls: 1,
+        cacheHits: 2,
+        apiCalls30d: 1,
+        lastUsedAt: db.usageSummary(user.id).lastUsedAt,
+    });
+    db.close();
+});
+
+test('public and admin user summaries include spaces without exposing episode details', () => {
+    const db = new MultiUserDatabase(':memory:');
+    const admin = db.createUser('admin-user', 'hash', 'admin');
+    const learner = db.createUser('learner', 'hash');
+    const space = db.createSpace(learner.id, 'Frieren');
+    db.createOrUpdateEpisode(learner.id, space.id, '01', 'private-file-name.mkv');
+    db.recordApiUsage(learner.id, { cached: false });
+
+    const summary = db.userSummaries().find((user) => user.id === learner.id);
+    assert.ok(summary);
+    assert.equal(summary.spaceCount, 1);
+    assert.equal(summary.episodeCount, 1);
+    assert.equal(summary.apiCalls, 1);
+    assert.equal(summary.spaces[0].name, 'Frieren');
+    assert.equal('mediaFileName' in summary.spaces[0], false);
+
+    db.updateUser(learner.id, { username: 'learner-renamed', role: 'admin', disabled: false });
+    assert.equal(db.getUserById(learner.id).role, 'admin');
+    assert.equal(db.adminCount, 2);
+    db.deleteUser(learner.id);
+    assert.equal(db.getUserById(learner.id), undefined);
+    assert.equal(db.getUserById(admin.id).username, 'admin-user');
     db.close();
 });

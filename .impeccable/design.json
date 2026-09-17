@@ -1,0 +1,111 @@
+{
+    "schemaVersion": 2,
+    "generatedAt": "2026-09-17T00:00:00.000Z",
+    "title": "Design System: asbplayer Study",
+    "extensions": {
+        "colorMeta": {
+            "primary-blue": {
+                "role": "primary",
+                "displayName": "Console Blue",
+                "canonical": "#0a84ff",
+                "tonalRamp": ["#001a33", "#003566", "#005099", "#006bcc", "#0a84ff", "#5cadff", "#add6ff", "#eaf5ff"]
+            },
+            "dark-canvas": {
+                "role": "neutral",
+                "displayName": "Night Canvas",
+                "canonical": "#0b0b0d",
+                "tonalRamp": ["#050506", "#0b0b0d", "#242428", "#47474d", "#707078", "#a2a2a9", "#d4d4d8", "#f4f4f5"]
+            },
+            "dark-surface": {
+                "role": "neutral",
+                "displayName": "Control Surface",
+                "canonical": "#1c1c1e",
+                "tonalRamp": ["#09090a", "#1c1c1e", "#343438", "#56565c", "#7d7d84", "#a8a8ae", "#d3d3d6", "#f4f4f5"]
+            }
+        },
+        "typographyMeta": {
+            "title": { "displayName": "Title", "purpose": "Dialog titles and important entity names." },
+            "body": { "displayName": "Body", "purpose": "Forms, explanations, and account data." },
+            "label": { "displayName": "Label", "purpose": "Buttons, tabs, roles, and compact metadata." }
+        },
+        "shadows": [
+            {
+                "name": "dialog-ambient",
+                "value": "0 28px 80px rgba(0,0,0,.56)",
+                "purpose": "Separates dialogs from the media player."
+            },
+            {
+                "name": "popover-ambient",
+                "value": "0 16px 48px rgba(0,0,0,.48)",
+                "purpose": "Separates menus and temporary floating controls."
+            }
+        ],
+        "motion": [{ "name": "state-fast", "value": "160ms ease", "purpose": "Hover, active, and focus feedback." }],
+        "breakpoints": [
+            { "name": "sm", "value": "600px" },
+            { "name": "md", "value": "900px" }
+        ]
+    },
+    "components": [
+        {
+            "name": "Primary Button",
+            "kind": "button",
+            "refersTo": "button-primary",
+            "description": "Compact primary action with the established blue accent.",
+            "html": "<button class=\"ds-btn-primary\">保存更改</button>",
+            "css": ".ds-btn-primary { background:#0a84ff; color:#fff; border:0; border-radius:10px; padding:8px 16px; min-height:36px; font:600 14px -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; transition:background-color 160ms ease,transform 160ms ease; } .ds-btn-primary:hover { background:#409cff; } .ds-btn-primary:focus-visible { outline:2px solid #fff; outline-offset:2px; } .ds-btn-primary:active { transform:scale(.97); }"
+        },
+        {
+            "name": "Text Field",
+            "kind": "input",
+            "refersTo": "input",
+            "description": "Tonal field with a clear blue focus state.",
+            "html": "<input class=\"ds-input\" value=\"用户名\" aria-label=\"用户名\" />",
+            "css": ".ds-input { background:rgba(255,255,255,.055); color:#f5f5f7; border:2px solid transparent; border-radius:12px; padding:12px 14px; font:400 16px -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; } .ds-input:hover { border-color:rgba(255,255,255,.18); } .ds-input:focus { border-color:#0a84ff; outline:0; }"
+        },
+        {
+            "name": "Status Chip",
+            "kind": "chip",
+            "description": "Compact role or account-status label using text and color together.",
+            "html": "<span class=\"ds-chip\">管理员</span>",
+            "css": ".ds-chip { display:inline-flex; align-items:center; min-height:24px; padding:2px 8px; border-radius:8px; background:rgba(10,132,255,.16); color:#69b4ff; font:600 12px -apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif; }"
+        }
+    ],
+    "narrative": {
+        "northStar": "The Quiet Media Console",
+        "overview": "The interface recedes behind playback, study, and account tasks. It uses compact controls, clear type hierarchy, neutral tonal layers, and blue reserved for primary actions and selection. Account and admin surfaces are information-dense but not intimidating; public activity is factual metadata rather than competition.",
+        "keyCharacteristics": [
+            "Restrained blue accent with neutral layered surfaces",
+            "Familiar Material controls with compact, readable density",
+            "Explicit roles, status labels, and action consequences",
+            "Responsive lists and tables that remain usable on small screens"
+        ],
+        "rules": [
+            {
+                "name": "Accent Discipline",
+                "body": "Blue marks an action, focus, or selection. It is not decorative background filler.",
+                "section": "colors"
+            },
+            {
+                "name": "Familiar Density",
+                "body": "Use fixed product-UI sizes; do not use oversized fluid headings in authenticated surfaces.",
+                "section": "typography"
+            },
+            {
+                "name": "Flat by Default",
+                "body": "Lists, tables, and account sections use tonal separation or a divider, not decorative drop shadows.",
+                "section": "elevation"
+            }
+        ],
+        "dos": [
+            "Do use direct action labels.",
+            "Do pair role and account status with readable text labels.",
+            "Do keep public member data limited to safe aggregate metadata."
+        ],
+        "donts": [
+            "Don't build marketing-dashboard decoration, competitive leaderboards, excessive card grids, or ornamental gradients.",
+            "Don't expose API keys, password material, media filenames, or subtitle analysis in public member views.",
+            "Don't hide the consequence of destructive admin controls."
+        ]
+    }
+}

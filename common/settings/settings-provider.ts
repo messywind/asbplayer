@@ -310,7 +310,6 @@ export const defaultSettings: AsbplayerSettings = {
     lastSelectedAnkiExportMode: 'default',
     dictionaryTracks: [defaultDictionaryTrackSettings, defaultDictionaryTrackSettings, defaultDictionaryTrackSettings],
     llmAnalysisEnabled: false,
-    llmAutoAnalyze: true,
     llmApiKey: '',
     llmBaseUrl: 'https://api.deepseek.com/v1',
     llmModel: 'deepseek-chat',

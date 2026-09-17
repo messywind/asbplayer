@@ -612,8 +612,6 @@ export type KeyBindName = keyof KeyBindSet;
 export interface LlmAnalysisSettings {
     /** Master switch: show the analysis panel next to the subtitle list. */
     readonly llmAnalysisEnabled: boolean;
-    /** Automatically analyze each subtitle as it appears (vs. manual button). */
-    readonly llmAutoAnalyze: boolean;
     /** API key sent as `Authorization: Bearer <key>`. */
     readonly llmApiKey: string;
     /** Base URL of the OpenAI-compatible API, e.g. https://api.deepseek.com/v1 */
