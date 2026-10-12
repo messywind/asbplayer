@@ -3,6 +3,7 @@
 // stores accounts, per-user anime archives, and a globally shared LLM cache.
 
 import http from 'node:http';
+import { createJellyfinHandler } from './lib/jellyfin.mjs';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,6 +49,7 @@ await loadDotEnv(path.join(__dirname, '.env'));
 const dataDir = process.env.DATA_DIR || path.join(__dirname, 'data');
 const CONFIG = {
     port: Number(process.env.PORT || 3939),
+    jellyfinUrl: process.env.JELLYFIN_URL || '',
     baseUrl: process.env.LLM_BASE_URL || 'https://api.deepseek.com/v1',
     model: process.env.LLM_MODEL || 'deepseek-chat',
     temperature: Number(process.env.LLM_TEMPERATURE || 0.2),
@@ -116,6 +118,15 @@ class HttpError extends Error {
         this.status = status;
     }
 }
+
+const handleJellyfin = createJellyfinHandler({
+    database,
+    serverUrl: CONFIG.jellyfinUrl,
+    encryptionSecret: CONFIG.encryptionSecret,
+    jsonBody,
+    sendJson,
+    HttpError,
+});
 
 function publicUser(user) {
     return {
@@ -422,6 +433,7 @@ async function handleApi(req, res, url, route) {
     }
 
     const user = requireUser(req);
+    if (await handleJellyfin(req, res, url, user)) return true;
     if (route === 'GET /api/community/users') {
         const users = database.userSummaries().map(({ disabled, hasApiKey, ...summary }) => summary);
         sendJson(res, 200, { users });
@@ -704,6 +716,10 @@ const server = http.createServer(async (req, res) => {
         if (req.method === 'GET' && (await serveStatic(req, res, url.pathname))) return;
         sendJson(res, 404, { error: 'not found' });
     } catch (error) {
+        if (res.headersSent || res.destroyed) {
+            if (!res.destroyed) res.destroy();
+            return;
+        }
         const status = error instanceof HttpError ? error.status : 500;
         if (status >= 500) console.error(error);
         sendJson(res, status, { error: String(error?.message || error) });

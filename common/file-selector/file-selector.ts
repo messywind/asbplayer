@@ -1,6 +1,6 @@
 export type FilesCallback = (files: FileWithId[]) => void;
 export type Unsubscriber = () => void;
-export type FileWithId = { file: File; id: string };
+export type FileWithId = { file: File; id: string; remoteUrl?: string };
 
 export interface FileSelector {
     open: () => void;

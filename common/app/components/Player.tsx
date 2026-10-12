@@ -52,7 +52,7 @@ import type ChromeExtension from '@project/common/app/services/chrome-extension'
 import type PlaybackPreferenceController from '@project/common/playback/controllers/playback-preference-controller';
 import { useWindowSize } from '@project/common/app/hooks/use-window-size';
 import { useAppBarHeight } from '@project/common/hooks/use-app-bar-height';
-import { createBlobUrl } from '@project/common/blob-url';
+import { mediaFileUrl } from '@project/common/file-selector';
 import { AudioClip } from '@project/common/audio-clip';
 import type { MiningContext } from '@project/common/app/services/mining-context';
 import type { SeekTimestampCommand, WebSocketClient } from '@project/common/web-socket-client';
@@ -283,6 +283,7 @@ function PlayerComponent(
     const flattenSubtitleFiles = sources?.flattenSubtitleFiles;
     const videoFile = sources?.videoFile;
     const videoFileUrl = sources?.videoFileUrl;
+    const remoteVideoUrl = videoFile?.remoteUrl;
     const playbackPositionKey = videoFile?.file.name;
     const syntheticPlayback = videoFileUrl === undefined && tab === undefined;
     const playModeEnabled = subtitles && subtitles.length > 0 && Boolean(videoFileUrl);
@@ -707,11 +708,16 @@ function PlayerComponent(
                 }
             } else {
                 subtitles = undefined;
+                // A remote media source may legitimately have no text subtitle track. In that case
+                // the previous episode's subtitles must not stay on screen or be mined by mistake.
+                if (remoteVideoUrl) {
+                    onSubtitles([]);
+                }
             }
         }
 
         void init().then(() => onLoaded(subtitleFiles?.map((f) => f.file) ?? []));
-    }, [subtitleReader, onLoaded, onError, subtitleFiles, flattenSubtitleFiles, onSubtitles]);
+    }, [subtitleReader, onLoaded, onError, subtitleFiles, flattenSubtitleFiles, onSubtitles, remoteVideoUrl]);
 
     useEffect(() => {
         if (tab) {
@@ -1033,7 +1039,7 @@ function PlayerComponent(
                             file: videoFile
                                 ? {
                                       name: videoFile.file.name,
-                                      blobUrl: createBlobUrl(videoFile.file),
+                                      blobUrl: mediaFileUrl(videoFile),
                                       audioTrack: channel?.selectedAudioTrack,
                                       playbackRate: channel?.playbackRate,
                                   }
@@ -1203,7 +1209,7 @@ function PlayerComponent(
                                       name: videoFile.file.name,
                                       audioTrack: selectedAudioTrack,
                                       playbackRate,
-                                      blobUrl: createBlobUrl(videoFile.file),
+                                      blobUrl: mediaFileUrl(videoFile),
                                   },
                         ...cardTextFieldValues,
                     },
@@ -1500,7 +1506,7 @@ function PlayerComponent(
             const clip = AudioClip.fromFile(
                 {
                     name: videoFile.file.name,
-                    blobUrl: createBlobUrl(videoFile.file),
+                    blobUrl: mediaFileUrl(videoFile),
                     audioTrack: selectedAudioTrack,
                     playbackRate,
                 },

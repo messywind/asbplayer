@@ -1,3 +1,4 @@
+import JellyfinLibrary from '@project/common/app/components/JellyfinLibrary';
 import { asbError, asbWarn, humanReadableTime, download, extractText, timeDurationDisplay } from '@project/common/util';
 import type { ComponentProps } from 'react';
 import React, { useCallback, useEffect, useState, useMemo, useRef } from 'react';
@@ -50,7 +51,7 @@ import type { SeekRequest } from '@project/common/app/components/VideoPlayer';
 import VideoPlayer from '@project/common/app/components/VideoPlayer';
 import type { AlertColor } from '@mui/material/Alert';
 import type VideoChannel from '@project/common/app/services/video-channel';
-import { addBlobUrl, createBlobUrl, revokeBlobUrl } from '@project/common/blob-url';
+import { addBlobUrl, revokeBlobUrl } from '@project/common/blob-url';
 import { useTranslation } from 'react-i18next';
 import { LocalizedError } from '@project/common/app/components/localized-error';
 import { useCopyHistory } from '@project/common/app/hooks/use-copy-history';
@@ -86,7 +87,7 @@ import StatisticsOverlay from '@project/common/components/StatisticsOverlay';
 import OneUncollectedSentenceDetailsDialog from '@project/common/components/OneUncollectedSentenceDetailsDialog';
 import VideoDataSyncDialog, { useVideoDataSyncDialogState } from '@project/common/components/VideoDataSyncDialog';
 import type { FileWithId } from '@project/common/file-selector';
-import { DefaultFileSelector } from '@project/common/file-selector';
+import { DefaultFileSelector, mediaFileUrl } from '@project/common/file-selector';
 import { useAccount } from '@project/common/app/services/account-context';
 import { AccountCenterDialog, ArchiveAssignmentDialog } from '@project/common/app/components/AccountDialogs';
 
@@ -187,7 +188,10 @@ function extractSources(files: FileWithId[]): MediaSources {
             throw new LocalizedError('error.unknownExtension', { fileName: f.file.name });
         }
 
-        if (SUBTITLE_EXT_SET.has(extension)) {
+        if (f.remoteUrl) {
+            if (videoFile) throw new LocalizedError('error.onlyOneVideoFile');
+            videoFile = f;
+        } else if (SUBTITLE_EXT_SET.has(extension)) {
             subtitleFiles.push(f);
         } else if (VIDEO_EXT_SET.has(extension)) {
             if (videoFile) {
@@ -415,6 +419,7 @@ function App({
     const [jumpToSubtitle, setJumpToSubtitle] = useState<SubtitleModel>();
     const [rewindSubtitle, setRewindSubtitle] = useState<SubtitleModel>();
     const [sources, setSources] = useState<MediaSources>({ subtitleFiles: [] });
+    const [jellyfinOpen, setJellyfinOpen] = useState(false);
     const [loadingSources, setLoadingSources] = useState<FileWithId[]>([]);
     const [dragging, setDragging] = useState<boolean>(false);
     const dragEnterRef = useRef<Element | null>(null);
@@ -807,7 +812,7 @@ function App({
             setStatisticsOverlayOpen(false);
 
             setSources((previous) => {
-                revokeBlobUrl(videoFileUrl);
+                if (videoFileUrl.startsWith('blob:')) revokeBlobUrl(videoFileUrl);
 
                 return {
                     subtitleFiles: previous.subtitleFiles,
@@ -1040,11 +1045,11 @@ function App({
 
                     if (videoFile) {
                         if (previous.videoFileUrl) {
-                            revokeBlobUrl(previous.videoFileUrl);
+                            if (previous.videoFileUrl.startsWith('blob:')) revokeBlobUrl(previous.videoFileUrl);
                         }
 
                         if (videoFile) {
-                            videoFileUrl = createBlobUrl(videoFile.file);
+                            videoFileUrl = mediaFileUrl(videoFile);
                         }
 
                         setTab(undefined);
@@ -1054,7 +1059,12 @@ function App({
                     }
 
                     const sources = {
-                        subtitleFiles: subtitleFiles.length === 0 ? previous.subtitleFiles : subtitleFiles,
+                        subtitleFiles:
+                            videoFile?.remoteUrl && mediaSources.videoFile
+                                ? subtitleFiles
+                                : subtitleFiles.length === 0
+                                  ? previous.subtitleFiles
+                                  : subtitleFiles,
                         videoFile,
                         videoFileUrl: videoFileUrl,
                         flattenSubtitleFiles,
@@ -1083,7 +1093,9 @@ function App({
                     return sources;
                 });
 
-                if (subtitleFiles.length > 0) {
+                if (mediaSources.videoFile?.remoteUrl) {
+                    setFileName(mediaSources.videoFile.file.name);
+                } else if (subtitleFiles.length > 0) {
                     const subtitleFileName = subtitleFiles[0].file.name;
                     setFileName(subtitleFileName.substring(0, subtitleFileName.lastIndexOf('.')));
                 }
@@ -1995,6 +2007,13 @@ function App({
                                 onRefresh={updateFromServiceWorker}
                                 onClose={handleCloseNeedRefreshDialog}
                             />
+                            {account && (
+                                <JellyfinLibrary
+                                    open={jellyfinOpen}
+                                    onClose={() => setJellyfinOpen(false)}
+                                    onPlay={(files) => handleFiles({ files })}
+                                />
+                            )}
                             <Bar
                                 title={fileName || 'asbplayer'}
                                 drawerWidth={drawerWidth}
@@ -2010,6 +2029,7 @@ function App({
                                 onCopyLastError={handleCopyLastError}
                                 accountName={account?.user.username}
                                 onOpenAccount={account ? () => setAccountCenterOpen(true) : undefined}
+                                onOpenLibrary={account ? () => setJellyfinOpen(true) : undefined}
                             />
                             <input
                                 ref={fileInputRef}

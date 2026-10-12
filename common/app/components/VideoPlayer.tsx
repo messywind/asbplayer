@@ -79,7 +79,11 @@ import { useFullscreen } from '@project/common/app/hooks/use-fullscreen';
 import MobileVideoOverlay from '@project/common/components/MobileVideoOverlay';
 import BlurOverlay from '@project/common/app/components/BlurOverlay';
 import { CachedLocalStorage } from '@project/common/app/services/cached-local-storage';
-import { recoverVideoAudio, cancelAudioRecovery, AudioRecoveryError } from '@project/common/app/services/video-audio-recovery';
+import {
+    recoverVideoAudio,
+    cancelAudioRecovery,
+    AudioRecoveryError,
+} from '@project/common/app/services/video-audio-recovery';
 import { SidecarAudio } from '@project/common/app/services/sidecar-audio';
 import CircularProgress from '@mui/material/CircularProgress';
 import useLastScrollableControlType from '@project/common/hooks/use-last-scrollable-control-type';
@@ -479,7 +483,9 @@ export default function VideoPlayer({
     const likelyUnsupportedAudio = /\.(mkv|mka|m2ts|ts)$/i.test(videoFileName ?? '');
 
     const audioFixPanelVisible =
-        !audioFixDismissed && (audioFixStatus !== 'idle' || audioMissing || likelyUnsupportedAudio);
+        videoFile.startsWith('blob:') &&
+        !audioFixDismissed &&
+        (audioFixStatus !== 'idle' || audioMissing || likelyUnsupportedAudio);
 
     const handleRecoverAudio = useCallback(async () => {
         if (!video || audioFixStatus === 'working') return;
@@ -800,7 +806,12 @@ export default function VideoPlayer({
                     },
                     onPlaybackRateChanged: handlePlaybackRateChanged,
                     onDurationChanged: handleDurationChanged,
-                    onError: () => onErrorRef.current?.(errorMessageFromVideo(video)),
+                    onError: () =>
+                        onErrorRef.current?.(
+                            video.currentSrc.startsWith('blob:')
+                                ? errorMessageFromVideo(video)
+                                : 'Jellyfin 视频无法播放：请检查连接，或选择浏览器支持的视频版本（推荐 MP4 / H.264 / AAC）。当前不自动转码。'
+                        ),
                 }
             ),
             callbacks: {

@@ -1,3 +1,4 @@
+import VideoLibraryIcon from '@mui/icons-material/VideoLibrary';
 import { makeStyles } from '@mui/styles';
 import type { Theme } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -48,6 +49,7 @@ interface BarProps {
     onOpenStatistics?: () => void;
     accountName?: string;
     onOpenAccount?: () => void;
+    onOpenLibrary?: () => void;
 }
 
 interface StyleProps {
@@ -64,8 +66,7 @@ const useStyles = makeStyles<Theme, StyleProps, string>((theme) => ({
     },
     appBar: {
         color: theme.palette.text.primary,
-        background:
-            theme.palette.mode === 'dark' ? 'rgba(20,20,22,.82)' : 'rgba(255,255,255,.82)',
+        background: theme.palette.mode === 'dark' ? 'rgba(20,20,22,.82)' : 'rgba(255,255,255,.82)',
         backdropFilter: 'blur(24px) saturate(170%)',
         WebkitBackdropFilter: 'blur(24px) saturate(170%)',
         borderBottom: `1px solid ${theme.palette.divider}`,
@@ -171,6 +172,7 @@ export default function Bar({
     onOpenStatistics,
     accountName,
     onOpenAccount,
+    onOpenLibrary,
 }: BarProps) {
     const classes = useStyles({ drawerWidth });
     const canSaveAsSrt =
@@ -254,6 +256,13 @@ export default function Bar({
                             {title === 'asbplayer' ? '番剧语言学习空间' : '正在播放'}
                         </Typography>
                     </Box>
+                    {onOpenLibrary && (
+                        <Tooltip title="Jellyfin 媒体库">
+                            <IconButton aria-label="打开 Jellyfin 媒体库" color="inherit" onClick={onOpenLibrary}>
+                                <VideoLibraryIcon />
+                            </IconButton>
+                        </Tooltip>
+                    )}
                     {onOpenAccount && (
                         <Tooltip title={accountName ? `${accountName} 的番剧空间` : '账号'}>
                             <Button

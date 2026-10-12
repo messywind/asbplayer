@@ -40,6 +40,7 @@ SQLite 使用 WAL 模式，适合单实例的小型邀请制服务。
 | `DATA_DIR`                  | 数据目录                                               |
 | `DATABASE_PATH`             | SQLite 文件路径，默认 `<DATA_DIR>/asbplayer.sqlite`    |
 | `PUBLIC_DIR`                | 构建后的前端目录；Docker 已自动配置                    |
+| `JELLYFIN_URL`              | 可选。管理员配置的 Jellyfin 地址；留空则不启用媒体库   |
 
 生成加密密钥：
 
@@ -70,28 +71,36 @@ node server/server.mjs
 
 主要接口：
 
-| 接口                                | 作用                               |
-| ----------------------------------- | ---------------------------------- |
-| `POST /api/auth/login`              | 登录                               |
-| `POST /api/auth/register`           | 使用邀请码注册                     |
-| `GET /api/auth/me`                  | 当前账号                           |
-| `PUT /api/account/api-key`          | 加密保存当前用户 Key               |
-| `PUT /api/account/password`         | 修改当前用户密码并撤销其他会话     |
-| `GET /api/account/usage`            | 当前用户的请求、缓存和外部调用汇总 |
-| `GET /api/community/users`          | 所有成员可见的账号与番剧空间汇总   |
-| `GET/POST /api/spaces`              | 当前用户番剧空间                   |
-| `POST /api/episodes`                | 创建或更新集数归档                 |
-| `GET /api/library`                  | 浏览当前用户的完整归档             |
-| `POST /api/analyze`                 | 分析字幕或复用全局缓存             |
-| `POST /api/analyze-batch`           | 批量分析字幕并逐条复用全局缓存     |
-| `GET /api/episode?episodeId=…`      | 当前用户某一集的分析               |
-| `POST /api/admin/invites`           | 管理员生成邀请码                   |
-| `GET/POST /api/admin/users`         | 管理员查看或创建账号               |
-| `PATCH/DELETE /api/admin/users/:id` | 管理员修改、停用或删除账号         |
-| `PUT /api/admin/users/:id/password` | 管理员重置其他用户密码             |
+| 接口                                       | 作用                                     |
+| ------------------------------------------ | ---------------------------------------- |
+| `POST /api/auth/login`                     | 登录                                     |
+| `POST /api/auth/register`                  | 使用邀请码注册                           |
+| `GET /api/auth/me`                         | 当前账号                                 |
+| `PUT /api/account/api-key`                 | 加密保存当前用户 Key                     |
+| `PUT /api/account/password`                | 修改当前用户密码并撤销其他会话           |
+| `GET /api/account/usage`                   | 当前用户的请求、缓存和外部调用汇总       |
+| `GET /api/community/users`                 | 所有成员可见的账号与番剧空间汇总         |
+| `GET/POST /api/spaces`                     | 当前用户番剧空间                         |
+| `POST /api/episodes`                       | 创建或更新集数归档                       |
+| `GET /api/library`                         | 浏览当前用户的完整归档                   |
+| `POST /api/analyze`                        | 分析字幕或复用全局缓存                   |
+| `POST /api/analyze-batch`                  | 批量分析字幕并逐条复用全局缓存           |
+| `GET /api/episode?episodeId=…`             | 当前用户某一集的分析                     |
+| `POST /api/admin/invites`                  | 管理员生成邀请码                         |
+| `GET/POST /api/admin/users`                | 管理员查看或创建账号                     |
+| `PATCH/DELETE /api/admin/users/:id`        | 管理员修改、停用或删除账号               |
+| `PUT /api/admin/users/:id/password`        | 管理员重置其他用户密码                   |
+| `GET/POST/DELETE /api/jellyfin/connection` | 查看、建立或断开当前用户的 Jellyfin 连接 |
+| `GET /api/jellyfin/items`                  | 浏览当前 Jellyfin 账号可见的番剧与电影   |
+| `GET /api/jellyfin/playback/:id`           | 某条目的视频版本与可提取文本字幕         |
+| `GET/HEAD /api/jellyfin/stream/:id`        | 按 Range 转发原始视频流                  |
+| `GET /api/jellyfin/subtitles/:id`          | 导出文本字幕（SRT）                      |
+
+Jellyfin 密码只用于向 Jellyfin 换取访问令牌，不写入数据库；令牌使用 AES-256-GCM 加密，并绑定到 asbplayer 账号。
+服务器地址只由 `JELLYFIN_URL` 决定，客户端无法指定上游地址；请求不跟随重定向，也不会把 asbplayer 的 Cookie 转发给 Jellyfin。
 
 ## 测试
 
 ```bash
-node --test server/test.mjs
+node --test server/test.mjs server/jellyfin.test.mjs
 ```

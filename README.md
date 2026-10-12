@@ -21,6 +21,7 @@
 - **AI 语法分析面板**：整句翻译、逐词词法、语法点讲解（含大致 JLPT 等级）、口语/惯用法提示，支持「一键解析整集」并按字幕原文缓存，播放时不重复请求。
 - **邀请制多用户后端**（`server/`）：零依赖 Node 服务，与前端同源部署。管理员生成邀请码、管理账号；每个用户独立填写 LLM API Key，使用 **AES-256-GCM** 加密落库；番剧空间、集数归档按账号隔离；相同字幕分析按文本哈希**全局复用**，避免重复付费。
 - **单词发音**：后端代理本地 [VOICEVOX](https://voicevox.hiroshiba.jp/) 引擎，自然的日语神经 TTS；未部署时自动回退到浏览器自带 TTS。整句发音则直接截取当前视频的**番剧原声**。
+- **Jellyfin 媒体库**：管理员配置一次服务器地址，用户用各自的 Jellyfin 账号登录，即可在应用内浏览番剧、选集、挑视频版本与日文文本字幕，并直接进入学习播放器。视频由后端按需转发（支持拖动进度），不会整集下载。
 - **MKV 无声修复**：用浏览器内的 ffmpeg.wasm 把 AC-3 / E-AC-3 / DTS 等 Chromium 无法解码的音轨转成可播放的 AAC，与画面同步播放。
 - **数据可导出**：`GET /api/library`、`GET /api/export?format=jsonl|csv` 等接口可直接拿去做统计或喂给 AI。
 
@@ -114,6 +115,20 @@ VOICEVOX_SPEAKER=1
 
 重启后端后 `GET /api/health` 会出现 `tts: true`。未部署时点词会自动回退到浏览器 TTS。详见 [`LLM_ANALYSIS_README.md`](LLM_ANALYSIS_README.md#发音整句原声--单词-voicevox)。
 
+### 6. Jellyfin 媒体库（可选）
+
+在 `server/.env` 里填管理员自己的 Jellyfin 地址即可启用（反向代理带路径时也要写全）：
+
+```dotenv
+JELLYFIN_URL=https://media.example.com/jellyfin
+```
+
+重启后端后，顶栏会出现 **媒体库** 按钮。每个用户用**自己的 Jellyfin 账号**登录，只能看到该账号有权访问的条目；密码只用于换取访问令牌，不会落库，令牌用 AES-256-GCM 加密保存，用户可随时断开连接。
+
+Docker 部署时 `server/.env` 会整体注入容器，所以 Jellyfin 地址要填**容器内可访问**的地址：Jellyfin 跑在同一台机器上时用 `http://host.docker.internal:8096`（Linux 另需 `extra_hosts`），不要写 `localhost`。
+
+播放走**原始视频流**（`Static=true`），后端按 Range 请求转发、支持拖动进度，因此不依赖 Jellyfin 转码。代价是浏览器要能解码该编码：推荐 **MP4 / H.264 / AAC**，MKV + AC-3/DTS 等编码可能无法播放（这种情况请改用转码后的版本，或继续用本地文件 + MKV 无声修复）。图片字幕（PGS/VobSub）不会导入为学习字幕，只列出可提取的**文本字幕**。
+
 ---
 
 ## Docker 部署（生产 / 同源）
@@ -139,6 +154,7 @@ docker compose logs -f asbplayer
 - 视频与字幕文件**始终留在用户浏览器本地**，不会上传到服务器。
 - 账号、番剧空间、集数归档与全局分析缓存存于 SQLite（本地 `server/data/asbplayer.sqlite`，Docker 为 `/data/asbplayer.sqlite`）。
 - 每个用户的 LLM API Key 使用 AES-256-GCM 加密保存，后端**不会**把明文返回浏览器。
+- Jellyfin 密码不会保存；访问令牌同样使用 AES-256-GCM 加密。视频字节由后端按需转发，不落盘、不缓存，且转发前会用该用户的 Jellyfin 身份校验条目权限。
 - 成员目录只公开番剧空间名称与聚合数量，不暴露媒体文件名、字幕原文、分析内容或 API Key。
 
 ## 常见问题
